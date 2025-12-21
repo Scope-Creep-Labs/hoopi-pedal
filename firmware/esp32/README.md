@@ -92,6 +92,20 @@ idf.py flash monitor -p /dev/ttyUSB0
 | `/api/format` | POST | Format SD card |
 | `/api/dfu` | POST | Enter DFU mode |
 
+## Technical Notes
+
+### I2S Channel Configuration
+
+The ESP32 receives stereo audio from the Daisy Seed via I2S. The Daisy uses STM32's SAI peripheral configured for **MSB Justified (Left Justified)** format with 24-bit audio.
+
+**Important:** The WS (Word Select) polarity must be configured correctly to avoid L/R channel swap:
+
+- Daisy's SAI_I2S_MSBJUSTIFIED: WS HIGH = Left channel
+- ESP-IDF's default MSB config: WS LOW = Left channel (causes swap)
+- **Solution:** Set `ws_pol = true` in the I2S slot config
+
+This is implemented in `main/daisy.h` with a custom slot configuration instead of using the `I2S_STD_MSB_SLOT_DEFAULT_CONFIG` macro.
+
 ## License
 
 MIT License - see [LICENSE.md](LICENSE.md)
