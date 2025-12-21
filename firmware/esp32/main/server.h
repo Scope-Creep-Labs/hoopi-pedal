@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2025-2026 Scope Creep Labs LLC
-
 #ifndef F444CB5E_C703_4781_9351_D08DF8012A5E
 #define F444CB5E_C703_4781_9351_D08DF8012A5E
 
@@ -813,6 +810,150 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
         xEventGroupSetBits(s_wifi_event_group, CONNECTED_BIT);
         wifi_started = true;
     }
+}
+
+// Arm recording - set filename, send to Daisy, return immediately
+// JSON body: { "filename": "my_recording" } (without .wav extension)
+// Client should poll GET /api/recording/arm for status updates
+static esp_err_t record_arm_handler(httpd_req_t *req) {
+    char buf[300];
+    int ret = httpd_req_recv(req, buf, sizeof(buf));
+    if (ret <= 0) {
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"Unable to read request body\"}");
+        return ESP_OK;
+    }
+    buf[ret] = '\0';
+
+    cJSON *root = cJSON_Parse(buf);
+    if (!root) {
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"Invalid JSON\"}");
+        return ESP_OK;
+    }
+
+    cJSON *filename_json = cJSON_GetObjectItem(root, "filename");
+    if (!filename_json || !cJSON_IsString(filename_json) || strlen(filename_json->valuestring) == 0) {
+        cJSON_Delete(root);
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"Missing or empty filename\"}");
+        return ESP_OK;
+    }
+
+    // Check SD card
+    if (!sd_ok) {
+        cJSON_Delete(root);
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"SD card not mounted\"}");
+        return ESP_OK;
+    }
+
+    // Check if already recording
+    if (is_recording) {
+        cJSON_Delete(root);
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"Already recording\"}");
+        return ESP_OK;
+    }
+
+    // Check if already armed
+    if (is_recording_armed) {
+        cJSON_Delete(root);
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"Already armed\"}");
+        return ESP_OK;
+    }
+
+    // Store the filename for when footswitch triggers recording
+    strncpy(new_filename, filename_json->valuestring, sizeof(new_filename) - 1);
+    new_filename[sizeof(new_filename) - 1] = '\0';
+
+    cJSON_Delete(root);
+
+    // Set armed state BEFORE sending command to avoid race condition
+    is_recording_armed = true;
+
+    // Send arm command to Daisy and wait for ACK
+    const int max_retries = 3;
+    const int ack_timeout_ms = 500;
+    bool ack_received = false;
+
+    for (int retry = 0; retry < max_retries; retry++) {
+        send_arm_recording_cmd();
+
+        int wait_ms = 0;
+        while (!arm_ack_received && wait_ms < ack_timeout_ms) {
+            vTaskDelay(pdMS_TO_TICKS(50));
+            wait_ms += 50;
+        }
+
+        if (arm_ack_received) {
+            ack_received = true;
+            break;
+        }
+        ESP_LOGW(TAG, "Arm ACK timeout, retry %d/%d", retry + 1, max_retries);
+    }
+
+    if (!ack_received) {
+        is_recording_armed = false;
+        new_filename[0] = '\0';
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"Unable to communicate with Daisy\"}");
+        return ESP_OK;
+    }
+
+    ESP_LOGI(TAG, "Recording armed: %s (poll GET /api/recording/arm for status)", new_filename);
+
+    // Return immediately - client polls for status
+    char resp[400];
+    snprintf(resp, sizeof(resp),
+        "{\"status\":\"ok\",\"message\":\"Recording armed\",\"filename\":\"%.200s\"}",
+        new_filename);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, resp);
+    return ESP_OK;
+}
+
+// Disarm recording - cancel armed state
+static esp_err_t record_disarm_handler(httpd_req_t *req) {
+    if (!is_recording_armed) {
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"status\":\"ok\",\"message\":\"Recording was not armed\",\"armed\":false}");
+        return ESP_OK;
+    }
+
+    // Notify Daisy to disarm
+    send_disarm_cmd();
+    is_recording_armed = false;
+    new_filename[0] = '\0';
+
+    ESP_LOGI(TAG, "Recording disarmed");
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, "{\"status\":\"ok\",\"message\":\"Recording disarmed\",\"armed\":false}");
+    return ESP_OK;
+}
+
+// Get recording arm status
+static esp_err_t record_arm_status_handler(httpd_req_t *req) {
+    char resp[400];
+    if (is_recording_armed) {
+        snprintf(resp, sizeof(resp),
+            "{\"armed\":true,\"filename\":\"%.200s\",\"is_recording\":false,\"recording_ms\":0}",
+            new_filename);
+    } else if (is_recording) {
+        uint32_t now_ms = pdTICKS_TO_MS(xTaskGetTickCount());
+        uint32_t elapsed_ms = now_ms - recording_started_ms;
+        snprintf(resp, sizeof(resp),
+            "{\"armed\":false,\"filename\":\"%.200s\",\"is_recording\":true,\"recording_ms\":%lu}",
+            filename + strlen(SD_MOUNT_POINT) + 1, (unsigned long)elapsed_ms);
+    } else {
+        snprintf(resp, sizeof(resp),
+            "{\"armed\":false,\"filename\":\"\",\"is_recording\":false,\"recording_ms\":0}");
+    }
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, resp);
+    return ESP_OK;
 }
 
 static esp_err_t record_event_handler(httpd_req_t *req) {
@@ -1629,7 +1770,7 @@ static httpd_handle_t start_webserver(void) {
     config.lru_purge_enable = true;
     config.uri_match_fn = httpd_uri_match_wildcard;
     config.stack_size = 4096 * 4;  // Increase stack size for better performance
-    config.max_uri_handlers = 20;  // Increased for new endpoints
+    config.max_uri_handlers = 24;  // Increased for new endpoints
     config.send_wait_timeout = 10;  // 10 second send timeout
     config.recv_wait_timeout = 10;  // 10 second receive timeout
 
@@ -1675,6 +1816,27 @@ static httpd_handle_t start_webserver(void) {
         .uri = "/api/recording",
         .method = HTTP_POST,
         .handler = record_event_handler,
+        .user_ctx = NULL
+    };
+
+    const httpd_uri_t record_arm_uri = {
+        .uri = "/api/recording/arm",
+        .method = HTTP_POST,
+        .handler = record_arm_handler,
+        .user_ctx = NULL
+    };
+
+    const httpd_uri_t record_disarm_uri = {
+        .uri = "/api/recording/disarm",
+        .method = HTTP_POST,
+        .handler = record_disarm_handler,
+        .user_ctx = NULL
+    };
+
+    const httpd_uri_t record_arm_status_uri = {
+        .uri = "/api/recording/arm",
+        .method = HTTP_GET,
+        .handler = record_arm_status_handler,
         .user_ctx = NULL
     };
 
@@ -1759,6 +1921,9 @@ static httpd_handle_t start_webserver(void) {
         httpd_register_uri_handler(server, &wav_resumable_handler);
         httpd_register_uri_handler(server, &wav_handler);
         httpd_register_uri_handler(server, &config_uri);
+        httpd_register_uri_handler(server, &record_arm_uri);
+        httpd_register_uri_handler(server, &record_disarm_uri);
+        httpd_register_uri_handler(server, &record_arm_status_uri);
         httpd_register_uri_handler(server, &record_handler);
         httpd_register_uri_handler(server, &wifi_scan_uri);
         httpd_register_uri_handler(server, &status_uri);

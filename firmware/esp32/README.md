@@ -79,6 +79,9 @@ idf.py flash monitor -p /dev/ttyUSB0
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/recording` | POST | Start/stop recording |
+| `/api/recording/arm` | POST | Arm recording (wait for footswitch) |
+| `/api/recording/arm` | GET | Get armed status |
+| `/api/recording/disarm` | POST | Cancel armed recording |
 | `/api/list` | GET | List recordings |
 | `/api/wav/{file}` | GET | Download recording |
 | `/api/delete/{file}` | DELETE | Delete recording |

@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2025-2026 Scope Creep Labs LLC
-
 #ifndef E5722838_2248_4F44_8C7B_8A41EC5F9C14
 #define E5722838_2248_4F44_8C7B_8A41EC5F9C14
 
@@ -176,6 +173,8 @@ char filename[256+25];
 char new_filename[256] = {0};
 bool user_specified_filename = false;
 bool current_recording_uses_filenum = false;  // Track if current recording uses auto-generated name
+volatile bool is_recording_armed = false;  // Track if recording is armed (waiting for footswitch)
+volatile uint32_t recording_started_ms = 0;  // Timestamp when recording started (for sync)
 
 bool init_wav() {
 
@@ -370,6 +369,7 @@ void start_recording() {
         return;
     }
 
+    recording_started_ms = pdTICKS_TO_MS(xTaskGetTickCount());
     is_recording = true;
     error_count = 0;
     ESP_LOGI(TAG, "Recording started ....");

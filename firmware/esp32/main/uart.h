@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2025-2026 Scope Creep Labs LLC
-
 #ifndef B0E1E42C_0775_414D_9DF3_6644EACE2545
 #define B0E1E42C_0775_414D_9DF3_6644EACE2545
 #include "driver/uart.h"
@@ -23,6 +20,8 @@ const int UART_CONTROL_CHANGE_INDEX = 2;
 #define UART_CMD_RESET_BOOTLOADER  3
 #define UART_CMD_SET_PARAMETER     8
 #define UART_CMD_REQUEST_KNOBS     9
+#define UART_CMD_ARM_RECORDING     10
+#define UART_CMD_DISARM            11
 #define UART_CMD_CONTROL_CHANGE    16
 #define UART_CMD_SELECT_EFFECT     255
 
@@ -35,6 +34,7 @@ const int UART_CONTROL_CHANGE_INDEX = 2;
 #define UART_RX_EFFECT_SWITCHED    7
 #define UART_RX_PARAM_ACK          8
 #define UART_RX_KNOB_VALUES        9
+#define UART_RX_ARM_ACK            10
 
 // Effect Indices
 #define EFFECT_GALAXY      0
@@ -257,6 +257,7 @@ volatile uint8_t last_param_ack_param = 255;
 volatile uint8_t last_param_ack_value = 255;
 volatile bool param_ack_received = false;
 volatile bool effect_ack_received = false;
+volatile bool arm_ack_received = false;
 
 static void save_program_config() {
   nvs_handle_t nvs_handle;
@@ -650,6 +651,12 @@ static void uart_process_command(uint8_t cmd, uint8_t *data, uint8_t data_len) {
         if (data_len >= 1) {
           if (data[0] == 2) {
             ESP_LOGI("HOOPI", "Start record command received.");
+            // If recording is armed (waiting for footswitch), use the armed filename
+            if (is_recording_armed) {
+              ESP_LOGI("HOOPI", "Recording was armed, using preset filename: %s", new_filename);
+              user_specified_filename = true;
+              is_recording_armed = false;  // Clear armed state
+            }
             start_recording();
           } else if (data[0] == 1) {
             stop_recording();
@@ -701,6 +708,11 @@ static void uart_process_command(uint8_t cmd, uint8_t *data, uint8_t data_len) {
         if (data_len >= 7) {
           store_knob_values(data, data[6]);
         }
+        break;
+
+      case UART_RX_ARM_ACK:
+        ESP_LOGI("HOOPI", "Recording arm ACK received from Daisy");
+        arm_ack_received = true;
         break;
 
       default:
@@ -851,6 +863,19 @@ void send_request_knob_values() {
   knob_values_received = false;
   uart_send_cmd(UART_CMD_REQUEST_KNOBS);
   ESP_LOGI("HOOPI", "Request knob values cmd sent");
+}
+
+// Arm recording command (cmd=10)
+void send_arm_recording_cmd() {
+  arm_ack_received = false;
+  uart_send_cmd(UART_CMD_ARM_RECORDING);
+  ESP_LOGI("HOOPI", "Arm recording cmd sent");
+}
+
+// Disarm command (cmd=11) - cancel armed state on Daisy
+void send_disarm_cmd() {
+  uart_send_cmd(UART_CMD_DISARM);
+  ESP_LOGI("HOOPI", "Disarm cmd sent");
 }
 
 // Set output blend mode (global parameter, effect_idx ignored)

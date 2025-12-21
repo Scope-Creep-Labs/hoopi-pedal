@@ -108,6 +108,9 @@ inline void ApplyOutputBlend(float inL, float inR, float& outL, float& outR) {
 
 bool            bypass;
 bool is_recording = false;
+bool is_armed = false;           // Recording armed, waiting for footswitch
+uint32_t arm_blink_time = 0;     // For LED blink timing when armed
+bool arm_led_state = false;      // Current state of blinking LED
 bool looper_enabled = false;
 bool looper_recording = false;
 
@@ -456,6 +459,47 @@ void StopRecording() {
   }
 }
 
+// Arm recording - returns true if successfully armed
+bool ArmRecording() {
+  // Don't arm if already recording
+  if (is_recording) {
+    return false;
+  }
+
+  is_armed = true;
+  arm_blink_time = System::GetNow();
+  arm_led_state = true;
+  led2.Set(1.0f);  // Start with LED on
+  led2.Update();
+
+  // Send Arm ACK (cmd=0x0A)
+  UartSendCmd(0x0A);
+  return true;
+}
+
+// Called from main loop to update LED blinking when armed
+void UpdateArmBlinking() {
+  if (!is_armed) return;
+
+  uint32_t now = System::GetNow();
+  // Blink every 250ms (4Hz blink rate)
+  if (now - arm_blink_time >= 250) {
+    arm_blink_time = now;
+    arm_led_state = !arm_led_state;
+    led2.Set(arm_led_state ? 1.0f : 0.0f);
+    led2.Update();
+  }
+}
+
+// Cancel armed state (e.g., if user stops it before pressing footswitch)
+void DisarmRecording() {
+  if (is_armed) {
+    is_armed = false;
+    led2.Set(0.0f);
+    led2.Update();
+  }
+}
+
 #define HOLD_THRESHOLD_MS 1000
 
 uint32_t footswitch1_start_time = 0;
@@ -552,7 +596,12 @@ void UpdateButtons()
           led2.Update();
         }
         else {
-          if (!is_recording)
+          // If armed, pressing footswitch starts recording
+          if (is_armed) {
+            is_armed = false;  // Clear armed state
+            StartRecording();  // This will turn LED solid on
+          }
+          else if (!is_recording)
           {
             StartRecording();
           }

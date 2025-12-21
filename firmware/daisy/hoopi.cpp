@@ -347,6 +347,16 @@ int main(void)
             {
                 SendKnobValues();
             }
+            else if (cmd == 0x0A)  // Arm Recording
+            {
+                // ArmRecording() checks if already recording and sends ACK
+                ArmRecording();
+            }
+            else if (cmd == 0x0B)  // Disarm Recording
+            {
+                // Cancel armed state, no response per spec
+                DisarmRecording();
+            }
             else if (cmd == 0xFF)  // Select Effect
             {
                 // DATA: effect_id
@@ -374,6 +384,9 @@ int main(void)
         if (changed1 || changed2 || changed3) {
             SendToggleValues();
         }
+
+        // Update LED blinking if recording is armed
+        UpdateArmBlinking();
 
         System::Delay(50);
     }
