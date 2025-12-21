@@ -1,0 +1,18 @@
+# Build artifacts
+build/
+
+# Editor files
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Dependency build artifacts (keep source, ignore compiled)
+dependencies/libDaisy/build/
+dependencies/DaisySP/build/
+dependencies/DaisySP/DaisySP-LGPL/build/
+
+# Debug files
+*.lst
+*.map

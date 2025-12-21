@@ -1,0 +1,1017 @@
+{
+  "hardware": {
+    "knobs": [
+      {
+        "id": 0,
+        "name": "KNOB_1",
+        "description": "Knob 1 (leftmost)"
+      },
+      {
+        "id": 1,
+        "name": "KNOB_2",
+        "description": "Knob 2"
+      },
+      {
+        "id": 2,
+        "name": "KNOB_3",
+        "description": "Knob 3"
+      },
+      {
+        "id": 3,
+        "name": "KNOB_4",
+        "description": "Knob 4"
+      },
+      {
+        "id": 4,
+        "name": "KNOB_5",
+        "description": "Knob 5"
+      },
+      {
+        "id": 5,
+        "name": "KNOB_6",
+        "description": "Knob 6 (rightmost)"
+      }
+    ],
+    "toggle_switch": {
+      "name": "SWITCH_2",
+      "description": "Input processing mode for L channel (guitar)",
+      "positions": [
+        {
+          "value": 0,
+          "name": "LEFT",
+          "mode": "Clean",
+          "description": "No processing"
+        },
+        {
+          "value": 1,
+          "name": "MIDDLE",
+          "mode": "Compressor",
+          "description": "Compressor only"
+        },
+        {
+          "value": 2,
+          "name": "RIGHT",
+          "mode": "Comp+Gate",
+          "description": "Compressor + Noise Gate"
+        }
+      ]
+    },
+    "footswitches": [
+      {
+        "id": 1,
+        "name": "FOOTSWITCH_1",
+        "short_press": "Effect bypass toggle",
+        "long_press": "Next effect"
+      },
+      {
+        "id": 2,
+        "name": "FOOTSWITCH_2",
+        "short_press": "SD card recording start/stop",
+        "long_press": "Looper secondary function"
+      }
+    ],
+    "leds": [
+      {
+        "id": 1,
+        "name": "LED_1",
+        "description": "Effect status"
+      },
+      {
+        "id": 2,
+        "name": "LED_2",
+        "description": "Recording status"
+      }
+    ]
+  },
+  "global_params": {
+    "description": "Global parameters settable via UART (cmd=8, param_id 0-12, 30-36). Effect index ignored.",
+    "params": [
+      {
+        "name": "Output Blend Mode",
+        "default": 1,
+        "param_id": 0,
+        "type": "enum",
+        "values": {
+          "0": "Stereo (L/R separate)",
+          "1": "Mono Center (50/50 blend)",
+          "2": "Mono Left (blend to L)",
+          "3": "Mono Right (blend to R)"
+        },
+        "extra_byte": "apply_to_recording (0=no, 1=yes)"
+      },
+      {
+        "name": "GalaxyLite Damping",
+        "default": 140,
+        "param_id": 1,
+        "min": 0,
+        "max": 100,
+        "unit": "%",
+        "scale": "linear",
+        "description": "HF rolloff for mic reverb (0=bright, 100=dark)"
+      },
+      {
+        "name": "GalaxyLite PreDelay",
+        "default": 128,
+        "param_id": 2,
+        "min": 0,
+        "max": 100,
+        "unit": "%",
+        "scale": "linear",
+        "description": "Pre-delay time for mic reverb"
+      },
+      {
+        "name": "GalaxyLite Mix",
+        "default": 77,
+        "param_id": 3,
+        "min": 0,
+        "max": 100,
+        "unit": "%",
+        "scale": "linear",
+        "description": "Wet/dry for mic reverb (0=dry, 100=wet)"
+      },
+      {
+        "name": "Compressor Threshold",
+        "default": 102,
+        "param_id": 4,
+        "min": -60,
+        "max": 0,
+        "unit": "dB",
+        "scale": "linear",
+        "description": "Compression threshold. Active when toggle is Middle or Right."
+      },
+      {
+        "name": "Compressor Ratio",
+        "default": 40,
+        "param_id": 5,
+        "min": 1,
+        "max": 20,
+        "unit": ":1",
+        "scale": "log",
+        "description": "Compression ratio"
+      },
+      {
+        "name": "Compressor Attack",
+        "default": 5,
+        "param_id": 6,
+        "min": 1,
+        "max": 500,
+        "unit": "ms",
+        "scale": "log",
+        "description": "Compressor attack time"
+      },
+      {
+        "name": "Compressor Release",
+        "default": 12,
+        "param_id": 7,
+        "min": 10,
+        "max": 2000,
+        "unit": "ms",
+        "scale": "log",
+        "description": "Compressor release time"
+      },
+      {
+        "name": "Compressor Makeup Gain",
+        "default": 85,
+        "param_id": 8,
+        "min": 1.0,
+        "max": 4.0,
+        "unit": "x",
+        "scale": "linear",
+        "description": "Makeup gain multiplier"
+      },
+      {
+        "name": "Noise Gate Threshold",
+        "default": 128,
+        "param_id": 9,
+        "min": -80,
+        "max": -20,
+        "unit": "dB",
+        "scale": "linear",
+        "description": "Gate threshold. Active when toggle is Right."
+      },
+      {
+        "name": "Noise Gate Attack",
+        "default": 5,
+        "param_id": 10,
+        "min": 0.1,
+        "max": 50,
+        "unit": "ms",
+        "scale": "log",
+        "description": "Gate attack time"
+      },
+      {
+        "name": "Noise Gate Hold",
+        "default": 26,
+        "param_id": 11,
+        "min": 0,
+        "max": 500,
+        "unit": "ms",
+        "scale": "log",
+        "description": "Gate hold time"
+      },
+      {
+        "name": "Noise Gate Release",
+        "default": 12,
+        "param_id": 12,
+        "min": 10,
+        "max": 2000,
+        "unit": "ms",
+        "scale": "log",
+        "description": "Gate release time"
+      },
+      {
+        "name": "EQ Enable",
+        "default": 0,
+        "param_id": 30,
+        "type": "enum",
+        "values": {
+          "0": "Off",
+          "1": "On"
+        },
+        "description": "Enable 3-band EQ (applied before dynamics processing)"
+      },
+      {
+        "name": "EQ Low Gain",
+        "default": 128,
+        "param_id": 31,
+        "min": -12,
+        "max": 12,
+        "unit": "dB",
+        "scale": "linear",
+        "description": "Low band gain (128=0dB)"
+      },
+      {
+        "name": "EQ Mid Gain",
+        "default": 128,
+        "param_id": 32,
+        "min": -12,
+        "max": 12,
+        "unit": "dB",
+        "scale": "linear",
+        "description": "Mid band gain (128=0dB)"
+      },
+      {
+        "name": "EQ High Gain",
+        "default": 128,
+        "param_id": 33,
+        "min": -12,
+        "max": 12,
+        "unit": "dB",
+        "scale": "linear",
+        "description": "High band gain (128=0dB)"
+      },
+      {
+        "name": "EQ Low Freq",
+        "default": 85,
+        "param_id": 34,
+        "min": 50,
+        "max": 500,
+        "unit": "Hz",
+        "scale": "linear",
+        "description": "Low band frequency (default ~200Hz)"
+      },
+      {
+        "name": "EQ Mid Freq",
+        "default": 51,
+        "param_id": 35,
+        "min": 250,
+        "max": 4000,
+        "unit": "Hz",
+        "scale": "log",
+        "description": "Mid band frequency (default ~1kHz)"
+      },
+      {
+        "name": "EQ High Freq",
+        "default": 64,
+        "param_id": 36,
+        "min": 2000,
+        "max": 10000,
+        "unit": "Hz",
+        "scale": "log",
+        "description": "High band frequency (default ~4kHz)"
+      }
+    ]
+  },
+  "effects": [
+    {
+      "id": 0,
+      "name": "Galaxy",
+      "description": "FDN-based algorithmic reverb - full stereo, all knobs mapped",
+      "has_galaxylite": false,
+      "knob_params": [
+        {
+          "name": "Size",
+          "default": 0.4,
+          "knob": 0,
+          "midi_cc": 1,
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear"
+        },
+        {
+          "name": "Decay",
+          "default": 0.5,
+          "knob": 1,
+          "midi_cc": 21,
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear"
+        },
+        {
+          "name": "In Gain L",
+          "default": 0.0,
+          "knob": 2,
+          "midi_cc": 14,
+          "min": 1,
+          "max": 20,
+          "unit": "x",
+          "scale": "log"
+        },
+        {
+          "name": "Damping",
+          "default": 0.5,
+          "knob": 3,
+          "midi_cc": 22,
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear"
+        },
+        {
+          "name": "Mix",
+          "default": 0.5,
+          "knob": 4,
+          "midi_cc": 23,
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear"
+        },
+        {
+          "name": "In Gain R",
+          "default": 0.0,
+          "knob": 5,
+          "midi_cc": 24,
+          "min": 1,
+          "max": 20,
+          "unit": "x",
+          "scale": "log"
+        }
+      ],
+      "uart_only_params": []
+    },
+    {
+      "id": 1,
+      "name": "CloudSeed",
+      "description": "CloudSeed algorithmic reverb with 8 presets - full stereo",
+      "has_galaxylite": false,
+      "knob_params": [
+        {
+          "name": "PreDelay",
+          "default": 0.0,
+          "knob": 0,
+          "midi_cc": 14,
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear"
+        },
+        {
+          "name": "Decay",
+          "default": 0.5,
+          "knob": 1,
+          "midi_cc": 16,
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear"
+        },
+        {
+          "name": "In Gain L",
+          "default": 0.0,
+          "knob": 2,
+          "midi_cc": 21,
+          "min": 1,
+          "max": 20,
+          "unit": "x",
+          "scale": "log"
+        },
+        {
+          "name": "Tone",
+          "default": 0.5,
+          "knob": 3,
+          "midi_cc": 19,
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear"
+        },
+        {
+          "name": "Mix",
+          "default": 0.5,
+          "knob": 4,
+          "midi_cc": 15,
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear"
+        },
+        {
+          "name": "In Gain R",
+          "default": 0.0,
+          "knob": 5,
+          "midi_cc": 22,
+          "min": 1,
+          "max": 20,
+          "unit": "x",
+          "scale": "log"
+        }
+      ],
+      "uart_only_params": [
+        {
+          "name": "Mod Amt",
+          "default": 0.5,
+          "midi_cc": 17,
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear",
+          "description": "Modulation amount"
+        },
+        {
+          "name": "Mod Rate",
+          "default": 0.5,
+          "midi_cc": 18,
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear",
+          "description": "Modulation rate"
+        },
+        {
+          "name": "Preset",
+          "default": 6,
+          "midi_cc": 20,
+          "type": "binned",
+          "options": [
+            "FChorus",
+            "DullEchos",
+            "Hyperplane",
+            "MedSpace",
+            "Hallway",
+            "RubiKa",
+            "SmallRoom",
+            "90s"
+          ],
+          "description": "Reverb preset (1-8)"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "AmpSim",
+      "description": "L: Neural amp model, R: GalaxyLite reverb for mic",
+      "has_galaxylite": true,
+      "knob_params": [
+        {
+          "name": "Gain",
+          "default": 0.5,
+          "knob": 0,
+          "midi_cc": 14,
+          "target": "amp",
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear"
+        },
+        {
+          "name": "Level",
+          "default": 0.5,
+          "knob": 1,
+          "midi_cc": 16,
+          "target": "amp",
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear"
+        },
+        {
+          "name": "Model",
+          "default": 0,
+          "knob": 2,
+          "midi_cc": 18,
+          "target": "amp",
+          "type": "binned",
+          "options": [
+            "Fender57",
+            "Matchless",
+            "Klon",
+            "Mesa iic",
+            "Bassman",
+            "5150",
+            "Splawn"
+          ]
+        },
+        {
+          "name": "Reverb Size",
+          "default": 0.5,
+          "knob": 3,
+          "target": "galaxylite",
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear"
+        },
+        {
+          "name": "Reverb Decay",
+          "default": 0.5,
+          "knob": 4,
+          "target": "galaxylite",
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear"
+        },
+        {
+          "name": "Reverb In Gain",
+          "default": 0.0,
+          "knob": 5,
+          "target": "galaxylite",
+          "min": 1,
+          "max": 20,
+          "unit": "x",
+          "scale": "log"
+        }
+      ],
+      "uart_only_params": [
+        {
+          "name": "Mix",
+          "default": 1.0,
+          "midi_cc": 15,
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear",
+          "description": "Wet/dry mix"
+        },
+        {
+          "name": "Tone",
+          "default": 1.0,
+          "midi_cc": 17,
+          "min": 200,
+          "max": 20000,
+          "unit": "Hz",
+          "scale": "log",
+          "description": "LP filter cutoff"
+        },
+        {
+          "name": "IR",
+          "default": 0,
+          "midi_cc": 19,
+          "type": "binned",
+          "options": [
+            "Marsh",
+            "Proteus",
+            "US Deluxe",
+            "British"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "NAM",
+      "description": "L: Neural Amp Modeler, R: GalaxyLite reverb for mic",
+      "has_galaxylite": true,
+      "knob_params": [
+        {
+          "name": "Gain",
+          "default": 0.5,
+          "knob": 0,
+          "midi_cc": 14,
+          "target": "nam",
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear"
+        },
+        {
+          "name": "Level",
+          "default": 0.5,
+          "knob": 1,
+          "midi_cc": 15,
+          "target": "nam",
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear"
+        },
+        {
+          "name": "Model",
+          "default": 0,
+          "knob": 2,
+          "midi_cc": 16,
+          "target": "nam",
+          "type": "binned",
+          "options": [
+            "Mesa",
+            "Match30",
+            "DumHighG",
+            "DumLowG",
+            "Ethos",
+            "Splawn",
+            "PRSArch",
+            "JCM800",
+            "SansAmp",
+            "BE-100"
+          ]
+        },
+        {
+          "name": "Reverb Size",
+          "default": 0.5,
+          "knob": 3,
+          "target": "galaxylite",
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear"
+        },
+        {
+          "name": "Reverb Decay",
+          "default": 0.5,
+          "knob": 4,
+          "target": "galaxylite",
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear"
+        },
+        {
+          "name": "Reverb In Gain",
+          "default": 0.0,
+          "knob": 5,
+          "target": "galaxylite",
+          "min": 1,
+          "max": 20,
+          "unit": "x",
+          "scale": "log"
+        }
+      ],
+      "uart_only_params": [
+        {
+          "name": "Bass",
+          "default": 0.0,
+          "midi_cc": 17,
+          "min": -10,
+          "max": 10,
+          "unit": "dB",
+          "scale": "linear",
+          "description": "Bass EQ (110Hz)"
+        },
+        {
+          "name": "Mid",
+          "default": 0.0,
+          "midi_cc": 18,
+          "min": -10,
+          "max": 10,
+          "unit": "dB",
+          "scale": "linear",
+          "description": "Mid EQ (900Hz)"
+        },
+        {
+          "name": "Treble",
+          "default": 0.0,
+          "midi_cc": 19,
+          "min": -10,
+          "max": 10,
+          "unit": "dB",
+          "scale": "linear",
+          "description": "Treble EQ (4kHz)"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "name": "Distortion",
+      "description": "L: Multi-mode distortion, R: GalaxyLite reverb for mic",
+      "has_galaxylite": true,
+      "knob_params": [
+        {
+          "name": "Gain",
+          "default": 0.5,
+          "knob": 0,
+          "target": "distortion",
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear"
+        },
+        {
+          "name": "Level",
+          "default": 0.5,
+          "knob": 1,
+          "target": "distortion",
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear"
+        },
+        {
+          "name": "Type",
+          "default": 0,
+          "knob": 2,
+          "target": "distortion",
+          "type": "binned",
+          "options": [
+            "Hard Clip",
+            "Soft Clip",
+            "Fuzz",
+            "Tube",
+            "Multi Stage",
+            "Diode Clip"
+          ]
+        },
+        {
+          "name": "Reverb Size",
+          "default": 0.5,
+          "knob": 3,
+          "target": "galaxylite",
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear"
+        },
+        {
+          "name": "Reverb Decay",
+          "default": 0.5,
+          "knob": 4,
+          "target": "galaxylite",
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear"
+        },
+        {
+          "name": "Reverb In Gain",
+          "default": 0.0,
+          "knob": 5,
+          "target": "galaxylite",
+          "min": 1,
+          "max": 20,
+          "unit": "x",
+          "scale": "log"
+        }
+      ],
+      "uart_only_params": [
+        {
+          "name": "Tone",
+          "default": 0.5,
+          "min": 500,
+          "max": 2000,
+          "unit": "Hz",
+          "scale": "log",
+          "description": "Tilt tone (500Hz-2kHz)"
+        },
+        {
+          "name": "Intensity",
+          "default": 0.5,
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear",
+          "description": "Clipping intensity"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "name": "Delay",
+      "description": "L: Multi-mode delay, R: GalaxyLite reverb for mic",
+      "has_galaxylite": true,
+      "knob_params": [
+        {
+          "name": "Time",
+          "default": 0.5,
+          "knob": 0,
+          "midi_cc": 14,
+          "target": "delay",
+          "min": 20,
+          "max": 2000,
+          "unit": "ms",
+          "scale": "log"
+        },
+        {
+          "name": "Feedback",
+          "default": 0.5,
+          "knob": 1,
+          "midi_cc": 15,
+          "target": "delay",
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear"
+        },
+        {
+          "name": "Mix",
+          "default": 0.5,
+          "knob": 2,
+          "midi_cc": 16,
+          "target": "delay",
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear"
+        },
+        {
+          "name": "Type",
+          "default": 0,
+          "knob": 3,
+          "midi_cc": 17,
+          "target": "delay",
+          "type": "binned",
+          "options": [
+            "Forward",
+            "Reverse",
+            "Octave",
+            "RevOct"
+          ]
+        },
+        {
+          "name": "Reverb Size",
+          "default": 0.5,
+          "knob": 4,
+          "target": "galaxylite",
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear"
+        },
+        {
+          "name": "Reverb Decay",
+          "default": 0.5,
+          "knob": 5,
+          "target": "galaxylite",
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear"
+        }
+      ],
+      "uart_only_params": [
+        {
+          "name": "Tone",
+          "default": 1.0,
+          "midi_cc": 18,
+          "min": 300,
+          "max": 20000,
+          "unit": "Hz",
+          "scale": "log",
+          "description": "Delay tone filter"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "name": "Tremolo",
+      "description": "L: Multi-waveform tremolo, R: GalaxyLite reverb for mic",
+      "has_galaxylite": true,
+      "knob_params": [
+        {
+          "name": "Rate",
+          "default": 0.3,
+          "knob": 0,
+          "midi_cc": 14,
+          "target": "tremolo",
+          "min": 0.5,
+          "max": 15,
+          "unit": "Hz",
+          "scale": "log"
+        },
+        {
+          "name": "Depth",
+          "default": 0.5,
+          "knob": 1,
+          "midi_cc": 15,
+          "target": "tremolo",
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear"
+        },
+        {
+          "name": "Wave",
+          "default": 0,
+          "knob": 2,
+          "midi_cc": 16,
+          "target": "tremolo",
+          "type": "binned",
+          "options": [
+            "Sine",
+            "Triangle",
+            "Saw",
+            "Ramp",
+            "Square"
+          ]
+        },
+        {
+          "name": "Mod Rate",
+          "default": 0.0,
+          "knob": 3,
+          "midi_cc": 17,
+          "target": "tremolo",
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear"
+        },
+        {
+          "name": "Reverb Size",
+          "default": 0.5,
+          "knob": 4,
+          "target": "galaxylite",
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear"
+        },
+        {
+          "name": "Reverb Decay",
+          "default": 0.5,
+          "knob": 5,
+          "target": "galaxylite",
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear"
+        }
+      ],
+      "uart_only_params": []
+    },
+    {
+      "id": 7,
+      "name": "Chorus",
+      "description": "Stereo chorus effect - all knobs mapped to chorus params",
+      "has_galaxylite": false,
+      "knob_params": [
+        {
+          "name": "Wet",
+          "default": 0.65,
+          "knob": 0,
+          "midi_cc": 20,
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear"
+        },
+        {
+          "name": "Delay",
+          "default": 0.5,
+          "knob": 1,
+          "midi_cc": 21,
+          "min": 1,
+          "max": 50,
+          "unit": "ms",
+          "scale": "log"
+        },
+        {
+          "name": "LFO Freq",
+          "default": 0.25,
+          "knob": 2,
+          "midi_cc": 22,
+          "min": 0.1,
+          "max": 10,
+          "unit": "Hz",
+          "scale": "log"
+        },
+        {
+          "name": "LFO Depth",
+          "default": 0.3,
+          "knob": 3,
+          "midi_cc": 23,
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear"
+        },
+        {
+          "name": "Feedback",
+          "default": 0.25,
+          "knob": 4,
+          "midi_cc": 24,
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "scale": "linear"
+        },
+        {
+          "knob": 5,
+          "name": "(unused)",
+          "default": null
+        }
+      ],
+      "uart_only_params": []
+    }
+  ]
+}
