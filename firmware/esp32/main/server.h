@@ -1858,6 +1858,10 @@ static esp_err_t playback_resume_handler(httpd_req_t *req) {
 
     cJSON *response = cJSON_CreateObject();
     if (err == ESP_OK) {
+        // Resend backing track params to Daisy
+        playback_status_t status = playback_get_status();
+        send_backing_track_cmd(status.record_blend ? 1 : 0, playback_get_blend_value(), status.blend_mic ? 1 : 0);
+
         cJSON_AddStringToObject(response, "status", "ok");
     } else {
         cJSON_AddStringToObject(response, "status", "error");
