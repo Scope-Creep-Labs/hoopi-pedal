@@ -488,12 +488,6 @@ static uint8_t playback_get_blend_value(void)
     return playback_ctx.blend_ratio;
 }
 
-// Check if blend_mic is enabled
-static bool playback_is_blend_mic(void)
-{
-    return playback_ctx.blend_mic;
-}
-
 // Set loop mode
 static void playback_set_loop(bool loop)
 {
