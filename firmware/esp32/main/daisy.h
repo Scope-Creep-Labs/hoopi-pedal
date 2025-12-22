@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2025-2026 Scope Creep Labs LLC
-
 #ifndef E7AD30DD_48D3_4FA7_BC4A_32F2002FE249
 #define E7AD30DD_48D3_4FA7_BC4A_32F2002FE249
 #include "driver/i2s_std.h"
@@ -21,10 +18,10 @@ static const char *TAG = "HOOPI";
 #define EXAMPLE_STD_DIN_IO1         GPIO_NUM_2     // I2S data in io number
 #define EXAMPLE_STD_DOUT_IO1        GPIO_NUM_1     // I2S data out io number
 
-static i2s_chan_handle_t                tx_chan;        // I2S tx channel handler
+i2s_chan_handle_t                tx_chan;        // I2S tx channel handler (non-static for playback access)
 static i2s_chan_handle_t                rx_chan;        // I2S rx channel handler
 
-#define BUFFER_SIZE               1*300 * 48 * 2 * 4 //stereo sample bytes
+#define BUFFER_SIZE               1*300 * 48 * 2 * 4  // 115,200 bytes (300ms of 48kHz stereo 32-bit)
 
 const size_t SAMPLE_RATE = 48000;
 

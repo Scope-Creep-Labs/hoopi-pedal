@@ -22,6 +22,7 @@ const int UART_CONTROL_CHANGE_INDEX = 2;
 #define UART_CMD_REQUEST_KNOBS     9
 #define UART_CMD_ARM_RECORDING     10
 #define UART_CMD_DISARM            11
+#define UART_CMD_BACKING_TRACK     12  // Backing track: data[0]=record_blend, data[1]=blend ratio, data[2]=blend_mic
 #define UART_CMD_CONTROL_CHANGE    16
 #define UART_CMD_SELECT_EFFECT     255
 
@@ -896,6 +897,17 @@ void send_set_galaxylite_predelay_cmd(uint8_t predelay) {
 // Set GalaxyLite mix (global parameter)
 void send_set_galaxylite_mix_cmd(uint8_t mix) {
   send_set_parameter_cmd_simple(0, PARAM_GALAXYLITE_MIX, mix);
+}
+
+// Backing track command (cmd=12)
+// Sent when playback starts to configure how backing track audio is mixed.
+// record_blend: 0=don't blend into recording, 1=blend into recording
+// blend: 0-127 (0.0-0.5) - always applies to output, applies to recording if record_blend=1
+// blend_mic: 0=guitar channel only, 1=also blend mic channel
+void send_backing_track_cmd(uint8_t record_blend, uint8_t blend, uint8_t blend_mic) {
+  uint8_t data[] = {record_blend, blend, blend_mic};
+  uart_send_frame(UART_CMD_BACKING_TRACK, data, 3);
+  ESP_LOGI("HOOPI", "Backing track cmd sent: record_blend=%d, blend=%d, blend_mic=%d", record_blend, blend, blend_mic);
 }
 
 #endif /* B0E1E42C_0775_414D_9DF3_6644EACE2545 */

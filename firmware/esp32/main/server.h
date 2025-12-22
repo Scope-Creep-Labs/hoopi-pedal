@@ -29,6 +29,7 @@
 
 #include "uart.h"
 #include "wifi_utils.h"
+#include "playback.h"
 
 // Embedded effects_config.json (from EMBED_TXTFILES in CMakeLists.txt)
 extern const char effects_config_json_start[] asm("_binary_effects_config_json_start");
@@ -1746,6 +1747,255 @@ static esp_err_t get_params_handler(httpd_req_t *req) {
     return ESP_OK;
 }
 
+// ============== Playback API Handlers ==============
+
+static esp_err_t playback_play_handler(httpd_req_t *req) {
+    char buf[256];
+    int ret = httpd_req_recv(req, buf, sizeof(buf) - 1);
+    if (ret <= 0) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Failed to receive request body");
+        return ESP_FAIL;
+    }
+    buf[ret] = '\0';
+
+    cJSON *root = cJSON_Parse(buf);
+    if (!root) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+        return ESP_FAIL;
+    }
+
+    cJSON *filename_json = cJSON_GetObjectItem(root, "filename");
+    if (!filename_json || !cJSON_IsString(filename_json)) {
+        cJSON_Delete(root);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing filename");
+        return ESP_FAIL;
+    }
+
+    bool loop = false;
+    cJSON *loop_json = cJSON_GetObjectItem(root, "loop");
+    if (loop_json && cJSON_IsBool(loop_json)) {
+        loop = cJSON_IsTrue(loop_json);
+    }
+
+    // Record blend mode: blend playback into recording audio
+    bool record_blend = false;
+    float blend_ratio = 0.25f;  // Default blend ratio
+    bool blend_mic = false;     // Whether to also blend mic channel
+    cJSON *blend_enable_json = cJSON_GetObjectItem(root, "record_blend");
+    if (blend_enable_json && cJSON_IsBool(blend_enable_json)) {
+        record_blend = cJSON_IsTrue(blend_enable_json);
+    }
+    cJSON *blend_json = cJSON_GetObjectItem(root, "blend_ratio");
+    if (blend_json && cJSON_IsNumber(blend_json)) {
+        blend_ratio = (float)blend_json->valuedouble;
+        // Clamp to valid range
+        if (blend_ratio < 0.0f) blend_ratio = 0.0f;
+        if (blend_ratio > 0.5f) blend_ratio = 0.5f;
+    }
+    cJSON *blend_mic_json = cJSON_GetObjectItem(root, "blend_mic");
+    if (blend_mic_json && cJSON_IsBool(blend_mic_json)) {
+        blend_mic = cJSON_IsTrue(blend_mic_json);
+    }
+
+    // Build full filepath
+    char filepath[300];
+    snprintf(filepath, sizeof(filepath), "%s/%s", SD_MOUNT_POINT, filename_json->valuestring);
+
+    cJSON_Delete(root);
+
+    // Start playback
+    esp_err_t err = playback_start(filepath, loop, record_blend, blend_ratio, blend_mic);
+    if (err != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to start playback");
+        return ESP_FAIL;
+    }
+
+    // Always send UART backing track command when playback starts
+    // blend_ratio always applies to output; record_blend controls whether to blend into recording
+    send_backing_track_cmd(record_blend ? 1 : 0, playback_get_blend_value(), blend_mic ? 1 : 0);
+
+    // Get duration for response
+    playback_status_t status = playback_get_status();
+
+    cJSON *response = cJSON_CreateObject();
+    cJSON_AddStringToObject(response, "status", "ok");
+    cJSON_AddNumberToObject(response, "duration_ms", status.duration_ms);
+    cJSON_AddBoolToObject(response, "record_blend", record_blend);
+    cJSON_AddNumberToObject(response, "blend_ratio", blend_ratio);
+    cJSON_AddBoolToObject(response, "blend_mic", blend_mic);
+
+    char *json_str = cJSON_PrintUnformatted(response);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, json_str);
+
+    free(json_str);
+    cJSON_Delete(response);
+    return ESP_OK;
+}
+
+static esp_err_t playback_pause_handler(httpd_req_t *req) {
+    esp_err_t err = playback_pause();
+
+    cJSON *response = cJSON_CreateObject();
+    if (err == ESP_OK) {
+        cJSON_AddStringToObject(response, "status", "ok");
+    } else {
+        cJSON_AddStringToObject(response, "status", "error");
+        cJSON_AddStringToObject(response, "message", "Not playing");
+    }
+
+    char *json_str = cJSON_PrintUnformatted(response);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, json_str);
+
+    free(json_str);
+    cJSON_Delete(response);
+    return ESP_OK;
+}
+
+static esp_err_t playback_resume_handler(httpd_req_t *req) {
+    esp_err_t err = playback_resume();
+
+    cJSON *response = cJSON_CreateObject();
+    if (err == ESP_OK) {
+        cJSON_AddStringToObject(response, "status", "ok");
+    } else {
+        cJSON_AddStringToObject(response, "status", "error");
+        cJSON_AddStringToObject(response, "message", "Not paused");
+    }
+
+    char *json_str = cJSON_PrintUnformatted(response);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, json_str);
+
+    free(json_str);
+    cJSON_Delete(response);
+    return ESP_OK;
+}
+
+static esp_err_t playback_stop_handler(httpd_req_t *req) {
+    // Disable backing track blend on Daisy
+    send_backing_track_cmd(0, 0, 0);
+
+    playback_stop();
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, "{\"status\":\"ok\"}");
+    return ESP_OK;
+}
+
+static esp_err_t playback_seek_handler(httpd_req_t *req) {
+    char buf[128];
+    int ret = httpd_req_recv(req, buf, sizeof(buf) - 1);
+    if (ret <= 0) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Failed to receive request body");
+        return ESP_FAIL;
+    }
+    buf[ret] = '\0';
+
+    cJSON *root = cJSON_Parse(buf);
+    if (!root) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+        return ESP_FAIL;
+    }
+
+    cJSON *position_json = cJSON_GetObjectItem(root, "position_ms");
+    if (!position_json || !cJSON_IsNumber(position_json)) {
+        cJSON_Delete(root);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing position_ms");
+        return ESP_FAIL;
+    }
+
+    uint32_t position_ms = (uint32_t)position_json->valuedouble;
+    cJSON_Delete(root);
+
+    esp_err_t err = playback_seek(position_ms);
+
+    cJSON *response = cJSON_CreateObject();
+    if (err == ESP_OK) {
+        cJSON_AddStringToObject(response, "status", "ok");
+        cJSON_AddNumberToObject(response, "position_ms", position_ms);
+    } else {
+        cJSON_AddStringToObject(response, "status", "error");
+        cJSON_AddStringToObject(response, "message", "Seek failed");
+    }
+
+    char *json_str = cJSON_PrintUnformatted(response);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, json_str);
+
+    free(json_str);
+    cJSON_Delete(response);
+    return ESP_OK;
+}
+
+static esp_err_t playback_status_handler(httpd_req_t *req) {
+    playback_status_t status = playback_get_status();
+
+    cJSON *response = cJSON_CreateObject();
+
+    const char *state_str;
+    switch (status.state) {
+        case PLAYBACK_PLAYING: state_str = "playing"; break;
+        case PLAYBACK_PAUSED: state_str = "paused"; break;
+        default: state_str = "stopped"; break;
+    }
+    cJSON_AddStringToObject(response, "state", state_str);
+
+    if (status.state != PLAYBACK_STOPPED) {
+        // Extract just the filename from the full path
+        const char *fname = strrchr(status.filename, '/');
+        fname = fname ? fname + 1 : status.filename;
+        cJSON_AddStringToObject(response, "filename", fname);
+        cJSON_AddNumberToObject(response, "position_ms", status.position_ms);
+        cJSON_AddNumberToObject(response, "duration_ms", status.duration_ms);
+        cJSON_AddBoolToObject(response, "loop", status.loop);
+        cJSON_AddBoolToObject(response, "record_blend", status.record_blend);
+        cJSON_AddNumberToObject(response, "blend_ratio", status.blend_ratio);
+        cJSON_AddBoolToObject(response, "blend_mic", status.blend_mic);
+    }
+
+    char *json_str = cJSON_PrintUnformatted(response);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, json_str);
+
+    free(json_str);
+    cJSON_Delete(response);
+    return ESP_OK;
+}
+
+static esp_err_t playback_loop_handler(httpd_req_t *req) {
+    char buf[64];
+    int ret = httpd_req_recv(req, buf, sizeof(buf) - 1);
+    if (ret <= 0) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Failed to receive request body");
+        return ESP_FAIL;
+    }
+    buf[ret] = '\0';
+
+    cJSON *root = cJSON_Parse(buf);
+    if (!root) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+        return ESP_FAIL;
+    }
+
+    cJSON *loop_json = cJSON_GetObjectItem(root, "loop");
+    if (!loop_json || !cJSON_IsBool(loop_json)) {
+        cJSON_Delete(root);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing loop boolean");
+        return ESP_FAIL;
+    }
+
+    bool loop = cJSON_IsTrue(loop_json);
+    cJSON_Delete(root);
+
+    playback_set_loop(loop);
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, "{\"status\":\"ok\"}");
+    return ESP_OK;
+}
+
 static httpd_handle_t start_webserver(void) {
     static struct file_server_data *server_data = NULL;
 
@@ -1770,7 +2020,7 @@ static httpd_handle_t start_webserver(void) {
     config.lru_purge_enable = true;
     config.uri_match_fn = httpd_uri_match_wildcard;
     config.stack_size = 4096 * 4;  // Increase stack size for better performance
-    config.max_uri_handlers = 24;  // Increased for new endpoints
+    config.max_uri_handlers = 32;  // Increased for playback endpoints
     config.send_wait_timeout = 10;  // 10 second send timeout
     config.recv_wait_timeout = 10;  // 10 second receive timeout
 
@@ -1913,6 +2163,56 @@ static httpd_handle_t start_webserver(void) {
         .user_ctx = NULL
     };
 
+    // Playback endpoints
+    const httpd_uri_t playback_play_uri = {
+        .uri = "/api/playback/play",
+        .method = HTTP_POST,
+        .handler = playback_play_handler,
+        .user_ctx = NULL
+    };
+
+    const httpd_uri_t playback_pause_uri = {
+        .uri = "/api/playback/pause",
+        .method = HTTP_POST,
+        .handler = playback_pause_handler,
+        .user_ctx = NULL
+    };
+
+    const httpd_uri_t playback_resume_uri = {
+        .uri = "/api/playback/resume",
+        .method = HTTP_POST,
+        .handler = playback_resume_handler,
+        .user_ctx = NULL
+    };
+
+    const httpd_uri_t playback_stop_uri = {
+        .uri = "/api/playback/stop",
+        .method = HTTP_POST,
+        .handler = playback_stop_handler,
+        .user_ctx = NULL
+    };
+
+    const httpd_uri_t playback_seek_uri = {
+        .uri = "/api/playback/seek",
+        .method = HTTP_POST,
+        .handler = playback_seek_handler,
+        .user_ctx = NULL
+    };
+
+    const httpd_uri_t playback_status_uri = {
+        .uri = "/api/playback/status",
+        .method = HTTP_GET,
+        .handler = playback_status_handler,
+        .user_ctx = NULL
+    };
+
+    const httpd_uri_t playback_loop_uri = {
+        .uri = "/api/playback/loop",
+        .method = HTTP_POST,
+        .handler = playback_loop_handler,
+        .user_ctx = NULL
+    };
+
     if (httpd_start(&server, &config) == ESP_OK)
     {
         httpd_register_uri_handler(server, &delete_handler);
@@ -1935,6 +2235,15 @@ static httpd_handle_t start_webserver(void) {
         httpd_register_uri_handler(server, &selecteffect_handler);
         httpd_register_uri_handler(server, &effectsconfig_handler);
         httpd_register_uri_handler(server, &getparams_handler);
+
+        // Playback endpoints
+        httpd_register_uri_handler(server, &playback_play_uri);
+        httpd_register_uri_handler(server, &playback_pause_uri);
+        httpd_register_uri_handler(server, &playback_resume_uri);
+        httpd_register_uri_handler(server, &playback_stop_uri);
+        httpd_register_uri_handler(server, &playback_seek_uri);
+        httpd_register_uri_handler(server, &playback_status_uri);
+        httpd_register_uri_handler(server, &playback_loop_uri);
 
         ESP_LOGI(TAG, "**** HTTP Server started ****");
         return server;

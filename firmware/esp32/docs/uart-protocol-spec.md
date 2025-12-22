@@ -131,6 +131,94 @@ Request current knob positions from Daisy.
 
 ---
 
+### CMD 0x0A: Arm Recording
+
+Arm the device for recording. Recording will start when the footswitch is pressed.
+The filename is pre-set via the HTTP API before sending this command.
+
+| Byte | Value | Description    |
+|------|-------|----------------|
+| CMD  | 0x0A  | Arm recording  |
+
+**Packet**: `AA 01 0A 0B`
+
+**Response**: Arm ACK (0x0A)
+
+**Flow**:
+1. App calls `POST /api/recording/arm` with filename
+2. ESP32 sends CMD 0x0A to Daisy
+3. Daisy acknowledges with CMD 0x0A (Arm ACK)
+4. ESP32 waits for footswitch (up to 60 seconds)
+5. User presses footswitch on device
+6. Daisy sends Recording Status (0x01, data=2)
+7. ESP32 starts recording with pre-set filename
+8. API returns success to app
+
+If timeout occurs at step 4, or user calls `/api/recording/disarm`, ESP32 sends CMD 0x0B (Disarm) to Daisy.
+
+---
+
+### CMD 0x0B: Disarm
+
+Cancel the armed recording state on Daisy. Sent on timeout or explicit disarm request.
+
+| Byte | Value | Description |
+|------|-------|-------------|
+| CMD  | 0x0B  | Disarm      |
+
+**Packet**: `AA 01 0B 0A`
+
+**Response**: None
+
+---
+
+### CMD 0x0C: Backing Track
+
+Configure backing track audio mixing. Sent every time playback starts on ESP32.
+
+The blend ratio **always applies to the output** (what you hear through the amp/headphones).
+The `record_blend` flag controls whether the blended audio is also sent back to ESP32 for recording.
+
+| Byte   | Value | Description                                                   |
+|--------|-------|---------------------------------------------------------------|
+| CMD    | 0x0C  | Backing track                                                 |
+| DATA 0 | 0-1   | Record blend: 0=don't blend into recording, 1=blend into recording |
+| DATA 1 | 0-127 | Blend ratio: 0=0.0 (live only), 127=0.5 (equal mix)           |
+| DATA 2 | 0-1   | Blend mic: 0=guitar only, 1=also blend mic channel            |
+
+**Packet**: `AA 04 0C <record_blend> <blend> <blend_mic> <checksum>`
+
+**Response**: None
+
+**Example packets**:
+- Guitar only, no recording: `AA 04 0C 00 3F 00 <checksum>` (blend guitar output only)
+- Guitar + mic, no recording: `AA 04 0C 00 3F 01 <checksum>` (blend both channels to output)
+- Guitar + mic, with recording: `AA 04 0C 01 3F 01 <checksum>` (blend both channels, include in recording)
+- Stop playback: `AA 04 0C 00 00 00 <checksum>`
+
+**Channel handling**:
+- ESP32 sends stereo playback via I2S TX (Left=guitar, Right=mic)
+- Daisy always processes the **LEFT channel** (guitar) - blends with live guitar
+- If `blend_mic=1`, Daisy also processes the **RIGHT channel** (mic) - blends with live mic
+- Same blend ratio applies to both channels
+
+**Behavior**:
+- **Blend ratio** (DATA 1): Mixes the playback channel(s) into the live signal(s) at the specified
+  ratio for the **output**. 0 = live only, 127 = equal mix (50% live, 50% backing).
+- **Record blend** (DATA 0): When enabled, the blended audio is sent back to ESP32 via I2S RX
+  for recording. When disabled, only the live signal is sent for recording.
+- **Blend mic** (DATA 2): When enabled, applies the same blend to the mic channel (right).
+
+**Use case**:
+1. ESP32 starts WAV playback via I2S TX (backing track)
+2. ESP32 sends CMD 0x0C with record_blend=0, blend=64, blend_mic=0 (practice: hear guitar backing only)
+3. Or: CMD 0x0C with record_blend=1, blend=64, blend_mic=1 (record both channels with backing)
+4. Daisy extracts channels from I2S RX and mixes with live signals
+5. If record_blend=1, mixed audio is sent back via I2S TX; otherwise live signals only
+6. When playback stops, ESP32 sends CMD 0x0C with record_blend=0, blend=0, blend_mic=0
+
+---
+
 ### CMD 0xFF: Select Effect
 
 Change the active effect.
@@ -273,6 +361,18 @@ Report current knob positions.
 | DATA 6 | 0-255 | Effect (bits 0-3) + Toggle (bits 4-7) |
 
 **Packet**: `AA 08 09 <k1> <k2> <k3> <k4> <k5> <k6> <meta> <checksum>`
+
+---
+
+### CMD 0x0A: Arm ACK
+
+Acknowledge recording arm request.
+
+| Byte | Value | Description |
+|------|-------|-------------|
+| CMD  | 0x0A  | Arm ACK     |
+
+**Packet**: `AA 01 0A 0B`
 
 ---
 

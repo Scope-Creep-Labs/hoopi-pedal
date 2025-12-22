@@ -1,7 +1,8 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2025-2026 Scope Creep Labs LLC
-//
-// Based on ESP-IDF examples (Espressif Systems)
+/*
+ * SPDX-FileCopyrightText: 2021-2024 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Unlicense OR CC0-1.0
+ */
 
 #include <driver/gpio.h>
 #include "freertos/FreeRTOS.h"
@@ -11,6 +12,7 @@
 
 #include "daisy.h"
 #include "sdcard.h"
+#include "playback.h"
 #include "server.h"
 #include "uart.h"
 #include "esp_psram.h"
@@ -74,6 +76,9 @@ void app_main(void)
 
     i2s_init_std_duplex();
 
+    // Initialize playback subsystem (allocate TX buffers)
+    playback_init();
+
     uint8_t retries = 5;
     uint8_t count = 0;
 
@@ -113,8 +118,11 @@ void app_main(void)
 
     vTaskDelay(pdMS_TO_TICKS(2000));
 
-    xTaskCreate(status, "hoopi_writer_task", 4096, NULL, 5, NULL);
-    xTaskCreate(i2s_read_task, "hoopi_i2s_task", 4096, NULL, 5, NULL);
+    xTaskCreate(status, "riffpod_writer_task", 4096, NULL, 5, NULL);
+    xTaskCreate(i2s_read_task, "riffpod_i2s_task", 4096, NULL, 5, NULL);
+
+    // Start playback tasks (file reader + I2S TX writer)
+    playback_start_tasks();
 
     gpio_set_level(LED_PIN, 1);
 
