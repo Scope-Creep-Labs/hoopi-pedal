@@ -2000,6 +2000,84 @@ static esp_err_t playback_loop_handler(httpd_req_t *req) {
     return ESP_OK;
 }
 
+// Update playback settings while playing (loop, blend params)
+static esp_err_t playback_settings_handler(httpd_req_t *req) {
+    char buf[256];
+    int ret = httpd_req_recv(req, buf, sizeof(buf) - 1);
+    if (ret <= 0) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Failed to receive request body");
+        return ESP_FAIL;
+    }
+    buf[ret] = '\0';
+
+    cJSON *root = cJSON_Parse(buf);
+    if (!root) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+        return ESP_FAIL;
+    }
+
+    // Get current status for defaults
+    playback_status_t status = playback_get_status();
+
+    bool loop = status.loop;
+    bool record_blend = status.record_blend;
+    float blend_ratio = status.blend_ratio;
+    bool blend_mic = status.blend_mic;
+    bool blend_changed = false;
+
+    // Update loop if provided
+    cJSON *loop_json = cJSON_GetObjectItem(root, "loop");
+    if (loop_json && cJSON_IsBool(loop_json)) {
+        loop = cJSON_IsTrue(loop_json);
+        playback_set_loop(loop);
+    }
+
+    // Update blend settings if any provided
+    cJSON *record_blend_json = cJSON_GetObjectItem(root, "record_blend");
+    if (record_blend_json && cJSON_IsBool(record_blend_json)) {
+        record_blend = cJSON_IsTrue(record_blend_json);
+        blend_changed = true;
+    }
+
+    cJSON *blend_ratio_json = cJSON_GetObjectItem(root, "blend_ratio");
+    if (blend_ratio_json && cJSON_IsNumber(blend_ratio_json)) {
+        blend_ratio = (float)blend_ratio_json->valuedouble;
+        if (blend_ratio < 0.0f) blend_ratio = 0.0f;
+        if (blend_ratio > 0.5f) blend_ratio = 0.5f;
+        blend_changed = true;
+    }
+
+    cJSON *blend_mic_json = cJSON_GetObjectItem(root, "blend_mic");
+    if (blend_mic_json && cJSON_IsBool(blend_mic_json)) {
+        blend_mic = cJSON_IsTrue(blend_mic_json);
+        blend_changed = true;
+    }
+
+    cJSON_Delete(root);
+
+    // Update blend settings and send to Daisy if changed
+    if (blend_changed) {
+        playback_set_blend(record_blend, blend_ratio, blend_mic);
+        send_backing_track_cmd(record_blend ? 1 : 0, playback_get_blend_value(), blend_mic ? 1 : 0);
+    }
+
+    // Return updated settings
+    cJSON *response = cJSON_CreateObject();
+    cJSON_AddStringToObject(response, "status", "ok");
+    cJSON_AddBoolToObject(response, "loop", loop);
+    cJSON_AddBoolToObject(response, "record_blend", record_blend);
+    cJSON_AddNumberToObject(response, "blend_ratio", blend_ratio);
+    cJSON_AddBoolToObject(response, "blend_mic", blend_mic);
+
+    char *json_str = cJSON_PrintUnformatted(response);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, json_str);
+
+    free(json_str);
+    cJSON_Delete(response);
+    return ESP_OK;
+}
+
 static httpd_handle_t start_webserver(void) {
     static struct file_server_data *server_data = NULL;
 
@@ -2217,6 +2295,13 @@ static httpd_handle_t start_webserver(void) {
         .user_ctx = NULL
     };
 
+    const httpd_uri_t playback_settings_uri = {
+        .uri = "/api/playback/settings",
+        .method = HTTP_POST,
+        .handler = playback_settings_handler,
+        .user_ctx = NULL
+    };
+
     if (httpd_start(&server, &config) == ESP_OK)
     {
         httpd_register_uri_handler(server, &delete_handler);
@@ -2248,6 +2333,7 @@ static httpd_handle_t start_webserver(void) {
         httpd_register_uri_handler(server, &playback_seek_uri);
         httpd_register_uri_handler(server, &playback_status_uri);
         httpd_register_uri_handler(server, &playback_loop_uri);
+        httpd_register_uri_handler(server, &playback_settings_uri);
 
         ESP_LOGI(TAG, "**** HTTP Server started ****");
         return server;

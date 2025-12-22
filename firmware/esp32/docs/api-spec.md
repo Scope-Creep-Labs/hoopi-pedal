@@ -163,9 +163,43 @@ Get current playback state and position.
 
 ---
 
+### POST /api/playback/settings
+
+Update playback settings while playing. All fields are optional - only provided fields are updated.
+
+**Request Body:**
+```json
+{
+  "loop": true,
+  "record_blend": true,
+  "blend_ratio": 0.3,
+  "blend_mic": true
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `loop` | boolean | No | Enable/disable looping |
+| `record_blend` | boolean | No | Blend into recording |
+| `blend_ratio` | float | No | Blend amount (0.0-0.5) |
+| `blend_mic` | boolean | No | Also blend mic channel |
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "loop": true,
+  "record_blend": true,
+  "blend_ratio": 0.3,
+  "blend_mic": true
+}
+```
+
+---
+
 ### POST /api/playback/loop
 
-Enable or disable loop mode during playback.
+Enable or disable loop mode during playback. (Legacy - use `/api/playback/settings` instead)
 
 **Request Body:**
 ```json

@@ -494,4 +494,15 @@ static void playback_set_loop(bool loop)
     playback_ctx.loop_enabled = loop;
 }
 
+// Set blend settings (updates context, caller should send UART command)
+static void playback_set_blend(bool record_blend, float blend_ratio, bool blend_mic)
+{
+    playback_ctx.record_blend = record_blend;
+    playback_ctx.blend_mic = blend_mic;
+    // Clamp blend_ratio to 0.0-0.5 and convert to 0-127
+    if (blend_ratio < 0.0f) blend_ratio = 0.0f;
+    if (blend_ratio > 0.5f) blend_ratio = 0.5f;
+    playback_ctx.blend_ratio = (uint8_t)(blend_ratio * 254.0f);
+}
+
 #endif /* PLAYBACK_H */
