@@ -1,5 +1,5 @@
 /**
- * Hoopi Pedal - Effects module
+ * Hoopi Pedal - Dual-channel guitar and vocal effects processor
  * Copyright (c) 2025-2026 Scope Creep Labs LLC
  * SPDX-License-Identifier: MIT
  */
@@ -70,16 +70,36 @@ static void ProcessTremolo(AudioHandle::InputBuffer  in,
         // Right channel: Reverb processing (mic input)
         float reverbOut = tremoloGalaxyLiteReverb.Process(inputR);
 
+        // Get backing track channels
+        float backingL = in[2][i];  // Guitar backing
+        float backingR = in[3][i];  // Mic backing
+
+        // Mix backing track into guitar (left channel)
+        float mixedL = ApplyBackingTrackMix(tremoloOut, backingL);
+        // Mix backing track into mic (right channel) if enabled
+        float mixedR = backingTrackBlendMic ? ApplyBackingTrackMix(reverbOut, backingR) : reverbOut;
+
         // Apply output blend to main outputs
-        ApplyOutputBlend(tremoloOut, reverbOut, out[0][i], out[1][i]);
+        ApplyOutputBlend(mixedL, mixedR, out[0][i], out[1][i]);
 
         // Recording outputs: stereo or blended based on setting
-        if (applyBlendToRecording) {
-            out[2][i] = out[0][i];
-            out[3][i] = out[1][i];
+        if (backingTrackRecordBlend) {
+            // Include backing track in recording
+            if (applyBlendToRecording) {
+                out[2][i] = out[0][i];
+                out[3][i] = out[1][i];
+            } else {
+                out[2][i] = mixedL;
+                out[3][i] = mixedR;
+            }
         } else {
-            out[2][i] = tremoloOut;
-            out[3][i] = reverbOut;
+            // Recording without backing track
+            if (applyBlendToRecording) {
+                ApplyOutputBlend(tremoloOut, reverbOut, out[2][i], out[3][i]);
+            } else {
+                out[2][i] = tremoloOut;
+                out[3][i] = reverbOut;
+            }
         }
     }
 }

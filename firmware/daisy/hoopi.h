@@ -59,6 +59,11 @@ uint8_t eqLowFreq = 85;             // param_id 34: 0-255 maps to 50Hz to 500Hz 
 uint8_t eqMidFreq = 51;             // param_id 35: 0-255 maps to 250Hz to 4kHz (default 51 ≈ 1kHz)
 uint8_t eqHighFreq = 64;            // param_id 36: 0-255 maps to 2kHz to 10kHz (default 64 ≈ 4kHz)
 
+// Backing track mixing parameters (set via CMD 0x0C)
+bool backingTrackRecordBlend = false;  // If true, blend backing track into recording outputs
+uint8_t backingTrackBlendRatio = 0;    // 0-127: 0=live only, 127=equal mix (0.5)
+bool backingTrackBlendMic = false;     // If true, also blend backing mic (right) into live mic
+
 // Forward declarations for effect modules (defined in effect headers)
 namespace bkshepherd { class BaseEffectModule; }
 
@@ -106,6 +111,17 @@ inline void ApplyOutputBlend(float inL, float inR, float& outL, float& outR) {
     }
 }
 
+// Mix backing track (left channel only) into guitar signal
+// Only affects left channel (guitar), right channel (mic) passes through unchanged
+inline float ApplyBackingTrackMix(float guitarL, float backingL) {
+    if (backingTrackBlendRatio == 0) {
+        return guitarL;
+    }
+    // 0-127 maps to 0.0-0.5 blend ratio (max 50% backing track at equal mix)
+    float blendRatio = backingTrackBlendRatio / 254.0f;
+    return guitarL * (1.0f - blendRatio) + backingL * blendRatio;
+}
+
 bool            bypass;
 bool is_recording = false;
 bool is_armed = false;           // Recording armed, waiting for footswitch
@@ -114,7 +130,7 @@ bool arm_led_state = false;      // Current state of blinking LED
 bool looper_enabled = false;
 bool looper_recording = false;
 
-uint8_t seed_fw_version = 7;  // Bumped to verify new firmware is running
+uint8_t seed_fw_version = 10;  // Bumped to verify new firmware is running
 
 UartHandler uart;
 
@@ -819,4 +835,3 @@ void CheckFsw1LongPress() {
 
 
 #endif /* AE5761B6_2132_4609_9EE7_AC848C0F56B0 */
-

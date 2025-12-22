@@ -46,15 +46,34 @@ static void AudioCallback(AudioHandle::InputBuffer  in,
             float inputR = in[1][i];
             ProcessInputChain(inputL, inputR);  // Only L is processed
 
+            // Get backing track channels
+            float backingL = in[2][i];  // Guitar backing
+            float backingR = in[3][i];  // Mic backing
+
+            // Mix backing track into guitar (left channel)
+            float mixedL = ApplyBackingTrackMix(inputL, backingL);
+            // Mix backing track into mic (right channel) if enabled
+            float mixedR = backingTrackBlendMic ? ApplyBackingTrackMix(inputR, backingR) : inputR;
+
             if (is_recording)
             {
-                out[0][i] = out[2][i] = inputL;
-                out[1][i] = out[3][i] = inputR;
+                // Main outputs always get backing track mix
+                out[0][i] = mixedL;
+                out[1][i] = mixedR;
+
+                // Recording outputs: blend if enabled, otherwise live signal only
+                if (backingTrackRecordBlend) {
+                    out[2][i] = mixedL;
+                    out[3][i] = mixedR;
+                } else {
+                    out[2][i] = inputL;
+                    out[3][i] = inputR;
+                }
             }
             else
             {
-                out[0][i] = inputL;
-                out[1][i] = inputR;
+                out[0][i] = mixedL;
+                out[1][i] = mixedR;
 
                 out[2][i] = 0.0f;
                 out[3][i] = 0.0f;
@@ -356,6 +375,16 @@ int main(void)
             {
                 // Cancel armed state, no response per spec
                 DisarmRecording();
+            }
+            else if (cmd == 0x0C)  // Backing Track
+            {
+                // DATA 0: record_blend (0=don't blend into recording, 1=blend)
+                // DATA 1: blend ratio (0-127: 0=live only, 127=equal mix)
+                // DATA 2: blend_mic (0=guitar only, 1=also blend mic channel)
+                backingTrackRecordBlend = (rx_payload[1] != 0);
+                backingTrackBlendRatio = rx_payload[2];
+                backingTrackBlendMic = (rx_payload[3] != 0);
+                // No response per spec
             }
             else if (cmd == 0xFF)  // Select Effect
             {

@@ -1,5 +1,5 @@
 /**
- * Hoopi Pedal - Effects module
+ * Hoopi Pedal - Dual-channel guitar and vocal effects processor
  * Copyright (c) 2025-2026 Scope Creep Labs LLC
  * SPDX-License-Identifier: MIT
  */
@@ -70,16 +70,36 @@ static void ProcessDistortion(AudioHandle::InputBuffer  in,
         // Right channel: Reverb processing (mono in from right, with input gain)
         float reverbOut = distortionGalaxyLiteReverb.Process(inputR * inputGain);
 
+        // Get backing track channels
+        float backingL = in[2][i];  // Guitar backing
+        float backingR = in[3][i];  // Mic backing
+
+        // Mix backing track into guitar (left channel)
+        float mixedL = ApplyBackingTrackMix(distOut, backingL);
+        // Mix backing track into mic (right channel) if enabled
+        float mixedR = backingTrackBlendMic ? ApplyBackingTrackMix(reverbOut, backingR) : reverbOut;
+
         // Apply output blend to main outputs
-        ApplyOutputBlend(distOut, reverbOut, out[0][i], out[1][i]);
+        ApplyOutputBlend(mixedL, mixedR, out[0][i], out[1][i]);
 
         // Recording outputs: stereo or blended based on setting
-        if (applyBlendToRecording) {
-            out[2][i] = out[0][i];
-            out[3][i] = out[1][i];
+        if (backingTrackRecordBlend) {
+            // Include backing track in recording
+            if (applyBlendToRecording) {
+                out[2][i] = out[0][i];
+                out[3][i] = out[1][i];
+            } else {
+                out[2][i] = mixedL;
+                out[3][i] = mixedR;
+            }
         } else {
-            out[2][i] = distOut;
-            out[3][i] = reverbOut;
+            // Recording without backing track
+            if (applyBlendToRecording) {
+                ApplyOutputBlend(distOut, reverbOut, out[2][i], out[3][i]);
+            } else {
+                out[2][i] = distOut;
+                out[3][i] = reverbOut;
+            }
         }
     }
 }
