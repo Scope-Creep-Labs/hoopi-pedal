@@ -458,6 +458,244 @@ static esp_err_t handle_delete_file(httpd_req_t *req) {
     return ESP_OK;
 }
 
+// ============== Backing Tracks API Handlers ==============
+
+// Validate WAV header for backing track upload
+// Returns true if valid 48kHz PCM with accepted bit depth and channel count
+static bool validate_wav_header(const uint8_t *header, uint16_t *out_channels, uint16_t *out_bits) {
+    // Check RIFF signature
+    if (memcmp(header, "RIFF", 4) != 0) return false;
+    // Check WAVE format
+    if (memcmp(header + 8, "WAVE", 4) != 0) return false;
+    // Check fmt chunk
+    if (memcmp(header + 12, "fmt ", 4) != 0) return false;
+
+    // Read format info (little-endian)
+    uint16_t audio_format = header[20] | (header[21] << 8);
+    uint16_t num_channels = header[22] | (header[23] << 8);
+    uint32_t sample_rate = header[24] | (header[25] << 8) | (header[26] << 16) | (header[27] << 24);
+    uint16_t bits_per_sample = header[34] | (header[35] << 8);
+
+    if (audio_format != 1) return false;  // Must be PCM
+    if (sample_rate != 48000) return false;  // Must be 48kHz
+    if (bits_per_sample != 8 && bits_per_sample != 16 &&
+        bits_per_sample != 24 && bits_per_sample != 32) return false;
+    if (num_channels != 1 && num_channels != 2) return false;
+
+    if (out_channels) *out_channels = num_channels;
+    if (out_bits) *out_bits = bits_per_sample;
+
+    return true;
+}
+
+static esp_err_t handle_backing_track_upload(httpd_req_t *req) {
+    if (!sd_ok) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "SD card not mounted");
+        return ESP_FAIL;
+    }
+
+    // Get filename from X-Filename header
+    char filename[128];
+    if (httpd_req_get_hdr_value_str(req, "X-Filename", filename, sizeof(filename)) != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing X-Filename header");
+        return ESP_FAIL;
+    }
+
+    // Security check - no path traversal
+    if (strstr(filename, "..") != NULL || strstr(filename, "/") != NULL) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid filename");
+        return ESP_FAIL;
+    }
+
+    // Check .wav extension
+    const char *ext = strrchr(filename, '.');
+    if (!ext || strcasecmp(ext, ".wav") != 0) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "File must have .wav extension");
+        return ESP_FAIL;
+    }
+
+    // Read first 44 bytes (WAV header) and validate
+    uint8_t header[44];
+    int recv = httpd_req_recv(req, (char*)header, 44);
+    if (recv != 44) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Failed to read WAV header");
+        return ESP_FAIL;
+    }
+
+    uint16_t num_channels = 0, bits_per_sample = 0;
+    if (!validate_wav_header(header, &num_channels, &bits_per_sample)) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid WAV format (must be 48kHz PCM, 8/16/24/32-bit, mono or stereo)");
+        return ESP_FAIL;
+    }
+
+    // Build filepath
+    char filepath[256];
+    snprintf(filepath, sizeof(filepath), "%s/%s", BACKING_TRACKS_FOLDER, filename);
+
+    // Delete if exists
+    struct stat st;
+    if (stat(filepath, &st) == 0) {
+        unlink(filepath);
+    }
+
+    // Open file and write header
+    FILE *f = fopen(filepath, "wb");
+    if (f == NULL) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to create file");
+        return ESP_FAIL;
+    }
+    fwrite(header, 44, 1, f);
+
+    // Stream remaining data to file using scratch buffer
+    char *scratch = ((struct file_server_data *)req->user_ctx)->scratch;
+    int remaining = req->content_len - 44;
+    size_t total_written = 44;
+
+    while (remaining > 0) {
+        int recv_size = remaining < SCRATCH_BUFSIZE ? remaining : SCRATCH_BUFSIZE;
+        int received = httpd_req_recv(req, scratch, recv_size);
+        if (received <= 0) {
+            ESP_LOGE(TAG, "Upload receive error or timeout");
+            break;
+        }
+        fwrite(scratch, received, 1, f);
+        total_written += received;
+        remaining -= received;
+    }
+    fclose(f);
+
+    // Calculate duration from data size (data starts at byte 44)
+    // For stereo 16-bit 48kHz: bytes_per_sec = 48000 * 2 * 2 = 192000
+    uint32_t data_size = total_written - 44;
+    uint32_t bytes_per_sample = bits_per_sample / 8;
+    uint32_t bytes_per_sec = 48000 * num_channels * bytes_per_sample;
+    uint32_t duration_sec = bytes_per_sec > 0 ? data_size / bytes_per_sec : 0;
+
+    // Generate backing_tracks.json
+    generate_backing_tracks_json();
+
+    // Return success
+    cJSON *response = cJSON_CreateObject();
+    cJSON_AddStringToObject(response, "status", "ok");
+    cJSON_AddStringToObject(response, "filename", filename);
+    cJSON_AddNumberToObject(response, "duration_sec", duration_sec);
+    cJSON_AddNumberToObject(response, "channels", num_channels);
+    cJSON_AddNumberToObject(response, "bits_per_sample", bits_per_sample);
+
+    char *json_str = cJSON_PrintUnformatted(response);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, json_str);
+
+    free(json_str);
+    cJSON_Delete(response);
+
+    ESP_LOGI(TAG, "Uploaded backing track: %s (%u sec, %d-ch, %d-bit)",
+             filename, (unsigned)duration_sec, num_channels, bits_per_sample);
+    return ESP_OK;
+}
+
+static esp_err_t handle_list_backing_tracks(httpd_req_t *req) {
+    wifi_busy = true;
+
+    if (!sd_ok) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "SD card not mounted");
+        wifi_busy = false;
+        return ESP_FAIL;
+    }
+
+    FILE *json_file = fopen(SD_MOUNT_POINT "/backing-tracks.json", "r");
+    if (json_file == NULL) {
+        // Return empty array if file doesn't exist
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "[]");
+        wifi_busy = false;
+        return ESP_OK;
+    }
+
+    char *chunk = ((struct file_server_data *)req->user_ctx)->scratch;
+    size_t chunksize;
+
+    httpd_resp_set_type(req, "application/json");
+
+    do {
+        chunksize = fread(chunk, 1, SCRATCH_BUFSIZE, json_file);
+        if (chunksize > 0) {
+            if (httpd_resp_send_chunk(req, chunk, chunksize) != ESP_OK) {
+                fclose(json_file);
+                httpd_resp_sendstr_chunk(req, NULL);
+                httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to send file");
+                wifi_busy = false;
+                return ESP_FAIL;
+            }
+        }
+    } while (chunksize != 0);
+
+    fclose(json_file);
+    httpd_resp_send_chunk(req, NULL, 0);
+    wifi_busy = false;
+    return ESP_OK;
+}
+
+static esp_err_t handle_delete_backing_track(httpd_req_t *req) {
+    if (!sd_ok) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "SD card not mounted");
+        return ESP_FAIL;
+    }
+
+    char filepath[FILE_PATH_MAX + 32];  // Extra space for backing-tracks folder
+    char decoded[128];
+
+    const char *filename = req->uri + strlen("/api/backing-tracks/");
+
+    // Security check - no path traversal
+    if (strstr(filename, "..") != NULL) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid filename");
+        return ESP_FAIL;
+    }
+
+    // Check .wav extension
+    const char *ext = strrchr(filename, '.');
+    if (!ext || strcasecmp(ext, ".wav") != 0) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Only .wav files can be deleted");
+        return ESP_FAIL;
+    }
+
+    percent_decode(decoded, filename);
+
+    snprintf(filepath, sizeof(filepath), "%s/%s", BACKING_TRACKS_FOLDER, decoded);
+
+    // Check if file exists
+    struct stat st;
+    if (stat(filepath, &st) != 0) {
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File not found");
+        return ESP_FAIL;
+    }
+
+    // Delete the file
+    if (unlink(filepath) != 0) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to delete file");
+        return ESP_FAIL;
+    }
+
+    // Regenerate JSON
+    generate_backing_tracks_json();
+
+    // Create success response
+    cJSON *response = cJSON_CreateObject();
+    cJSON_AddStringToObject(response, "status", "success");
+    cJSON_AddStringToObject(response, "deleted_file", decoded);
+
+    char *json_str = cJSON_PrintUnformatted(response);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, json_str);
+
+    free(json_str);
+    cJSON_Delete(response);
+
+    ESP_LOGI(TAG, "Deleted backing track: %s", decoded);
+    return ESP_OK;
+}
+
 static esp_err_t handle_format_sdcard(httpd_req_t *req) {
     ESP_LOGI(TAG, "SD card format requested");
     
@@ -1797,9 +2035,20 @@ static esp_err_t playback_play_handler(httpd_req_t *req) {
         blend_mic = cJSON_IsTrue(blend_mic_json);
     }
 
-    // Build full filepath
+    // Check source: "recording" (default) or "backing-track"
+    const char *source = "recording";
+    cJSON *source_json = cJSON_GetObjectItem(root, "source");
+    if (source_json && cJSON_IsString(source_json)) {
+        source = source_json->valuestring;
+    }
+
+    // Build full filepath based on source
     char filepath[300];
-    snprintf(filepath, sizeof(filepath), "%s/%s", SD_MOUNT_POINT, filename_json->valuestring);
+    if (strcmp(source, "backing-track") == 0) {
+        snprintf(filepath, sizeof(filepath), "%s/%s", BACKING_TRACKS_FOLDER, filename_json->valuestring);
+    } else {
+        snprintf(filepath, sizeof(filepath), "%s/%s", SD_MOUNT_POINT, filename_json->valuestring);
+    }
 
     cJSON_Delete(root);
 
@@ -2302,6 +2551,28 @@ static httpd_handle_t start_webserver(void) {
         .user_ctx = NULL
     };
 
+    // Backing tracks endpoints
+    const httpd_uri_t backing_tracks_upload_uri = {
+        .uri = "/api/backing-tracks/upload",
+        .method = HTTP_POST,
+        .handler = handle_backing_track_upload,
+        .user_ctx = server_data
+    };
+
+    const httpd_uri_t backing_tracks_list_uri = {
+        .uri = "/api/backing-tracks",
+        .method = HTTP_GET,
+        .handler = handle_list_backing_tracks,
+        .user_ctx = server_data
+    };
+
+    const httpd_uri_t backing_tracks_delete_uri = {
+        .uri = "/api/backing-tracks/*",
+        .method = HTTP_DELETE,
+        .handler = handle_delete_backing_track,
+        .user_ctx = NULL
+    };
+
     if (httpd_start(&server, &config) == ESP_OK)
     {
         httpd_register_uri_handler(server, &delete_handler);
@@ -2334,6 +2605,11 @@ static httpd_handle_t start_webserver(void) {
         httpd_register_uri_handler(server, &playback_status_uri);
         httpd_register_uri_handler(server, &playback_loop_uri);
         httpd_register_uri_handler(server, &playback_settings_uri);
+
+        // Backing tracks endpoints
+        httpd_register_uri_handler(server, &backing_tracks_delete_uri);  // Register before list (wildcard)
+        httpd_register_uri_handler(server, &backing_tracks_upload_uri);
+        httpd_register_uri_handler(server, &backing_tracks_list_uri);
 
         ESP_LOGI(TAG, "**** HTTP Server started ****");
         return server;

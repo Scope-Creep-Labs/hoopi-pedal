@@ -18,6 +18,7 @@ Start playback of a WAV file from the SD card.
 ```json
 {
   "filename": "recording.wav",
+  "source": "recording",
   "loop": false,
   "record_blend": false,
   "blend_ratio": 0.25,
@@ -27,7 +28,8 @@ Start playback of a WAV file from the SD card.
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `filename` | string | Yes | - | WAV file on SD card |
+| `filename` | string | Yes | - | WAV file name |
+| `source` | string | No | `"recording"` | Source folder: `"recording"` or `"backing-track"` |
 | `loop` | boolean | No | false | Loop playback continuously |
 | `record_blend` | boolean | No | false | Blend backing track into recording |
 | `blend_ratio` | float | No | 0.25 | Blend amount: 0.0 (live only) to 0.5 (equal mix) |
@@ -253,12 +255,79 @@ The backing track feature allows mixing a previously recorded track with live in
 
 ---
 
+## Backing Tracks API
+
+Manage user-uploaded backing tracks separately from auto-recordings.
+
+### POST /api/backing-tracks/upload
+
+Upload a WAV file to the backing tracks folder.
+
+**Request:** Raw WAV bytes with headers:
+- `X-Filename: song.wav` - Target filename
+- `Content-Length: 12345678` - File size in bytes
+
+**Validation:**
+- Must be valid WAV format (RIFF/WAVE header)
+- Must be PCM (audio_format = 1)
+- Must be 48kHz sample rate
+- Bit depth: 8, 16, 24, or 32-bit accepted
+- Mono or stereo accepted
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "filename": "song.wav",
+  "duration_sec": 180,
+  "channels": 2,
+  "bits_per_sample": 16
+}
+```
+
+**Errors:**
+- `400`: Missing X-Filename header, invalid WAV format, wrong sample rate
+- `500`: Failed to write file
+
+---
+
+### GET /api/backing-tracks
+
+List all backing tracks.
+
+**Response:**
+```json
+[
+  {"name": "song.wav", "size_kb": 5400, "duration_sec": 180, "modified_at": 1703721600}
+]
+```
+
+---
+
+### DELETE /api/backing-tracks/{filename}
+
+Delete a backing track.
+
+**Response:**
+```json
+{"status": "success", "deleted_file": "song.wav"}
+```
+
+**Errors:**
+- `404`: File not found
+- `500`: Failed to delete file
+
+---
+
 ## Audio Format
 
-**Supported playback format:**
-- WAV files only
-- 16-bit PCM
-- Stereo (2 channels)
-- 48kHz sample rate
+**Supported playback formats:**
+- WAV files only (PCM)
+- 8, 16, 24, or 32-bit
+- Mono or stereo (mono duplicated to both channels)
+- 48kHz sample rate only
+
+**Recording format:**
+- WAV 16-bit PCM stereo 48kHz
 
 ---

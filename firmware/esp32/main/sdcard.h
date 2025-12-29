@@ -17,6 +17,7 @@
 #include "ff.h"
 
 #define SD_MOUNT_POINT      "/sdcard"
+#define BACKING_TRACKS_FOLDER SD_MOUNT_POINT "/backing-tracks"
 
 const char mount_point[] = SD_MOUNT_POINT;
 
@@ -524,6 +525,96 @@ void generate_wav_json(){
     }
 
     fclose(json_file);
+}
+
+void init_backing_tracks_folder() {
+    struct stat st;
+    if (stat(BACKING_TRACKS_FOLDER, &st) != 0) {
+        if (mkdir(BACKING_TRACKS_FOLDER, 0755) == 0) {
+            ESP_LOGI(TAG, "Created backing-tracks folder");
+        } else {
+            ESP_LOGE(TAG, "Failed to create backing-tracks folder");
+        }
+    }
+}
+
+void generate_backing_tracks_json() {
+    DIR *dir = opendir(BACKING_TRACKS_FOLDER);
+    if (!dir) {
+        ESP_LOGE(TAG, "Failed to open backing-tracks directory for JSON generation");
+        return;
+    }
+
+    FILE* json_file = fopen(SD_MOUNT_POINT "/backing-tracks.json", "w");
+    if (json_file == NULL) {
+        ESP_LOGE(TAG, "Unable to open backing-tracks.json for writing");
+        closedir(dir);
+        return;
+    }
+
+    // Write opening bracket
+    if (fwrite("[", 1, 1, json_file) != 1) {
+        ESP_LOGE(TAG, "Failed to write JSON opening bracket");
+        fclose(json_file);
+        closedir(dir);
+        return;
+    }
+
+    struct dirent *entry;
+    char *ext;
+    struct stat st;
+    char filepath[FILE_PATH_MAX + 25];
+    char json_buffer[350];
+    bool first_entry = true;
+
+    // Process files one at a time
+    while ((entry = readdir(dir)) != NULL) {
+        ext = strrchr(entry->d_name, '.');
+        if (!(ext && strcasecmp(ext, ".wav") == 0)) {
+            continue;
+        }
+
+        snprintf(filepath, sizeof(filepath), "%s/%s", BACKING_TRACKS_FOLDER, entry->d_name);
+        if (stat(filepath, &st) != 0) {
+            continue;
+        }
+
+        int size_kb = st.st_size / 1024;
+        int duration_sec = st.st_size / (48000 * 4);  // Approximate: assuming stereo 16-bit
+        int modified_at = (int)st.st_mtime;
+
+        // Truncate filename if too long to prevent buffer overflow
+        char truncated_name[64];
+        strncpy(truncated_name, entry->d_name, sizeof(truncated_name) - 1);
+        truncated_name[sizeof(truncated_name) - 1] = '\0';
+
+        snprintf(json_buffer, sizeof(json_buffer),
+            "%s{\"name\":\"%s\",\"size_kb\":%d,\"duration_sec\":%d,\"modified_at\":%d}",
+            first_entry ? "" : ",",
+            truncated_name,
+            size_kb,
+            duration_sec,
+            modified_at
+        );
+
+        if (fwrite(json_buffer, strlen(json_buffer), 1, json_file) != 1) {
+            ESP_LOGE(TAG, "Failed to write JSON entry for file: %s", entry->d_name);
+            break;
+        }
+
+        first_entry = false;
+        vTaskDelay(pdMS_TO_TICKS(5));
+    }
+
+    closedir(dir);
+
+    // Write closing bracket
+    if (fwrite("]", 1, 1, json_file) != 1) {
+        ESP_LOGE(TAG, "Failed to write JSON closing bracket");
+    }
+
+    fclose(json_file);
+    ESP_LOGI(TAG, "Generated backing-tracks.json");
 }
 
 

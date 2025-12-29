@@ -101,15 +101,40 @@ static esp_err_t playback_init(void)
     return ESP_OK;
 }
 
-// Convert 16-bit samples to 32-bit for I2S TX
-// WAV files are 16-bit, but I2S expects 32-bit samples (upper 16 bits used)
-static void convert_16bit_to_32bit(int16_t *src, int32_t *dst, size_t sample_count)
+// Convert samples of various bit depths to 32-bit for I2S TX
+// I2S expects 32-bit samples with audio data left-aligned
+static void convert_samples_to_32bit(uint8_t *src, int32_t *dst, size_t sample_count, uint16_t bits_per_sample)
 {
-    for (size_t i = 0; i < sample_count; i++) {
-        // Left-align 16-bit sample in 32-bit word (same as recording does the reverse)
-        dst[i] = ((int32_t)src[i]) << 16;
+    switch (bits_per_sample) {
+        case 8:
+            // 8-bit audio is unsigned, center at 128
+            for (size_t i = 0; i < sample_count; i++) {
+                dst[i] = ((int32_t)(src[i] - 128)) << 24;
+            }
+            break;
+        case 16:
+            {
+                int16_t *src16 = (int16_t *)src;
+                for (size_t i = 0; i < sample_count; i++) {
+                    dst[i] = ((int32_t)src16[i]) << 16;
+                }
+            }
+            break;
+        case 24:
+            for (size_t i = 0; i < sample_count; i++) {
+                // Read 3 bytes as little-endian 24-bit sample
+                int32_t s = src[i*3] | (src[i*3+1] << 8) | (src[i*3+2] << 16);
+                // Sign extend from 24-bit to 32-bit
+                if (s & 0x800000) s |= 0xFF000000;
+                dst[i] = s << 8;
+            }
+            break;
+        case 32:
+            memcpy(dst, src, sample_count * 4);
+            break;
     }
 }
+
 
 // File reader task - reads from SD card and fills TX buffers
 static void playback_file_read_task(void *args)
@@ -139,15 +164,26 @@ static void playback_file_read_task(void *args)
             continue;
         }
 
-        // Read 16-bit samples from file
-        size_t samples_to_read = TX_BUFFER_SIZE / 4;  // Number of stereo samples (32-bit each in output)
-        size_t bytes_to_read = samples_to_read * 2;   // 16-bit = 2 bytes per sample
+        // Calculate bytes per sample based on file format
+        uint16_t bytes_per_sample = playback_ctx.bits_per_sample / 8;
+        uint16_t num_channels = playback_ctx.num_channels;
+
+        // TX_BUFFER_SIZE is for stereo 32-bit output
+        // Calculate how many output stereo frames we can fill
+        size_t output_stereo_frames = TX_BUFFER_SIZE / 8;  // 8 bytes per stereo 32-bit frame
+
+        // Calculate how many source frames to read
+        // For mono source, each frame becomes one stereo output frame
+        // For stereo source, each frame becomes one stereo output frame
+        size_t frames_to_read = output_stereo_frames;
+        size_t bytes_per_frame = bytes_per_sample * num_channels;
+        size_t bytes_to_read = frames_to_read * bytes_per_frame;
 
         // Check if we'd read past end of audio data
         size_t remaining = playback_ctx.audio_data_size - playback_ctx.current_position;
         if (remaining < bytes_to_read) {
             bytes_to_read = remaining;
-            samples_to_read = bytes_to_read / 2;
+            frames_to_read = bytes_to_read / bytes_per_frame;
         }
 
         if (bytes_to_read == 0) {
@@ -166,7 +202,7 @@ static void playback_file_read_task(void *args)
             }
         }
 
-        // Read from file
+        // Read from file into the read buffer
         size_t bytes_read = fread(file_read_buf, 1, bytes_to_read, playback_ctx.file);
         if (bytes_read == 0) {
             ESP_LOGE("PLAYBACK", "File read error");
@@ -175,15 +211,35 @@ static void playback_file_read_task(void *args)
         }
 
         playback_ctx.current_position += bytes_read;
+        size_t frames_read = bytes_read / bytes_per_frame;
 
-        // Convert 16-bit to 32-bit
-        size_t samples_read = bytes_read / 2;
-        convert_16bit_to_32bit(file_read_buf, (int32_t *)target_buf, samples_read);
+        // Convert to 32-bit and handle mono-to-stereo
+        int32_t *out_buf = (int32_t *)target_buf;
+
+        if (num_channels == 2) {
+            // Stereo file: convert samples directly (L R L R -> L R L R)
+            size_t total_samples = frames_read * 2;  // 2 samples per frame
+            convert_samples_to_32bit((uint8_t *)file_read_buf, out_buf, total_samples, playback_ctx.bits_per_sample);
+        } else {
+            // Mono file: duplicate each sample to L and R channels
+            // First convert mono samples to a temporary buffer, then expand
+            // We can use the first half of target_buf as temp since we'll expand in-place (reverse order)
+            size_t mono_samples = frames_read;
+            convert_samples_to_32bit((uint8_t *)file_read_buf, out_buf, mono_samples, playback_ctx.bits_per_sample);
+
+            // Expand mono to stereo in reverse order to avoid overwriting
+            for (int i = mono_samples - 1; i >= 0; i--) {
+                out_buf[i * 2] = out_buf[i];      // Left
+                out_buf[i * 2 + 1] = out_buf[i];  // Right (duplicate)
+            }
+        }
+
+        // Calculate output bytes written (always stereo 32-bit)
+        size_t output_bytes = frames_read * 8;  // stereo 32-bit = 8 bytes per frame
 
         // If we read less than a full buffer, zero the rest
-        if (samples_read < TX_BUFFER_SIZE / 4) {
-            size_t bytes_written = samples_read * 4;
-            memset(target_buf + bytes_written, 0, TX_BUFFER_SIZE - bytes_written);
+        if (output_bytes < TX_BUFFER_SIZE) {
+            memset(target_buf + output_bytes, 0, TX_BUFFER_SIZE - output_bytes);
         }
 
         // Mark buffer as ready
@@ -293,12 +349,13 @@ static esp_err_t parse_wav_header(FILE *f, playback_ctx_t *ctx)
              (unsigned)ctx->sample_rate, ctx->num_channels, ctx->bits_per_sample, (unsigned)ctx->audio_data_size);
 
     // Validate we support this format
-    if (ctx->bits_per_sample != 16) {
-        ESP_LOGE("PLAYBACK", "Only 16-bit audio supported");
+    if (ctx->bits_per_sample != 8 && ctx->bits_per_sample != 16 &&
+        ctx->bits_per_sample != 24 && ctx->bits_per_sample != 32) {
+        ESP_LOGE("PLAYBACK", "Only 8/16/24/32-bit audio supported (got %d)", ctx->bits_per_sample);
         return ESP_FAIL;
     }
-    if (ctx->num_channels != 2) {
-        ESP_LOGE("PLAYBACK", "Only stereo audio supported");
+    if (ctx->num_channels != 1 && ctx->num_channels != 2) {
+        ESP_LOGE("PLAYBACK", "Only mono or stereo audio supported (got %d channels)", ctx->num_channels);
         return ESP_FAIL;
     }
 

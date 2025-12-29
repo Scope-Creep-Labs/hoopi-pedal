@@ -103,6 +103,8 @@ void app_main(void)
         }
 
         generate_wav_json();
+        init_backing_tracks_folder();
+        generate_backing_tracks_json();
 
         break;
     }
