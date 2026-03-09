@@ -1,5 +1,5 @@
 /**
- * Hoopi Pedal - Effects module
+ * Hoopi Pedal - Dual-channel guitar and vocal effects processor
  * Copyright (c) 2025-2026 Scope Creep Labs LLC
  * SPDX-License-Identifier: MIT
  */
@@ -31,20 +31,21 @@ extern uint8_t eqHighGain;
 extern uint8_t eqLowFreq;
 extern uint8_t eqMidFreq;
 extern uint8_t eqHighFreq;
+extern bool inputProcessingEnabled;
 
 /**
  * Input Processing Chain - EQ, Compressor and Noise Gate
  * Parameters configurable via UART cmd=8
  *   - Compressor: param_id 4-8
  *   - Noise Gate: param_id 9-12
- *   - EQ: param_id 13 (enable), 14-19 (bands)
+ *   - EQ: param_id 30-36
  *
  * Controlled by Toggle Switch:
  *   Left (0): Clean - no processing
- *   Middle (1): Compressor only
- *   Right (2): Compressor + Noise Gate
+ *   Middle (1): Noise Gate (both channels)
+ *   Right (2): Compressor (guitar channel only)
  *
- * EQ is controlled independently via UART (disabled by default)
+ * EQ is controlled independently via UART (disabled by default, guitar channel only)
  */
 
 /**
@@ -274,7 +275,8 @@ class InputProcessor {
 public:
     void Init(float sample_rate) {
         m_compressor.Init(sample_rate);
-        m_noiseGate.Init(sample_rate);
+        m_noiseGateL.Init(sample_rate);
+        m_noiseGateR.Init(sample_rate);
         m_eq.Init(sample_rate);
 
         // Initialize with values from global variables
@@ -291,17 +293,18 @@ public:
     void SetMode(int mode) {
         // Mode from toggle switch:
         // 0 = Clean (no processing)
-        // 1 = Compressor only
-        // 2 = Compressor + Noise Gate
-        m_compressorEnabled = (mode >= 1);
-        m_noiseGateEnabled = (mode >= 2);
+        // 1 = Noise Gate only (both channels)
+        // 2 = Compressor only (guitar channel)
+        m_noiseGateEnabled = (mode == 1);
+        m_compressorEnabled = (mode == 2);
     }
 
     void SetEqEnabled(bool enabled) {
         m_eqEnabled = enabled;
     }
 
-    float Process(float in) {
+    // Process left channel (guitar) - EQ and compressor
+    float ProcessLeft(float in) {
         float out = in;
 
         // EQ first (shape tone before dynamics)
@@ -309,17 +312,20 @@ public:
             out = m_eq.Process(out);
         }
 
-        // Noise gate second (before gain stages)
-        if (m_noiseGateEnabled) {
-            out = m_noiseGate.Process(out);
-        }
-
-        // Compressor third
+        // Compressor
         if (m_compressorEnabled) {
             out = m_compressor.Process(out) * m_makeupGain;
         }
 
         return out;
+    }
+
+    // Process noise gate on both channels
+    void ProcessNoiseGateStereo(float& inL, float& inR) {
+        if (m_noiseGateEnabled) {
+            inL = m_noiseGateL.Process(inL);
+            inR = m_noiseGateR.Process(inR);
+        }
     }
 
     bool IsCompressorEnabled() const { return m_compressorEnabled; }
@@ -356,11 +362,11 @@ public:
         m_makeupGain = 1.0f + (value / 255.0f) * 3.0f;
     }
 
-    // Noise gate parameter setters (delegate to SimpleNoiseGate)
-    void SetGateThreshold(uint8_t value) { m_noiseGate.SetThresholdFromByte(value); }
-    void SetGateAttack(uint8_t value) { m_noiseGate.SetAttackFromByte(value); }
-    void SetGateHold(uint8_t value) { m_noiseGate.SetHoldFromByte(value); }
-    void SetGateRelease(uint8_t value) { m_noiseGate.SetReleaseFromByte(value); }
+    // Noise gate parameter setters (apply to both L and R gates)
+    void SetGateThreshold(uint8_t value) { m_noiseGateL.SetThresholdFromByte(value); m_noiseGateR.SetThresholdFromByte(value); }
+    void SetGateAttack(uint8_t value) { m_noiseGateL.SetAttackFromByte(value); m_noiseGateR.SetAttackFromByte(value); }
+    void SetGateHold(uint8_t value) { m_noiseGateL.SetHoldFromByte(value); m_noiseGateR.SetHoldFromByte(value); }
+    void SetGateRelease(uint8_t value) { m_noiseGateL.SetReleaseFromByte(value); m_noiseGateR.SetReleaseFromByte(value); }
 
     // EQ parameter setters (delegate to ThreeBandEQ)
     void SetEqLowGain(uint8_t value) { m_eq.SetLowGainFromByte(value); }
@@ -392,7 +398,8 @@ public:
 
 private:
     Compressor m_compressor;
-    SimpleNoiseGate m_noiseGate;
+    SimpleNoiseGate m_noiseGateL;
+    SimpleNoiseGate m_noiseGateR;
     ThreeBandEQ m_eq;
     float m_makeupGain;
     bool m_compressorEnabled;
@@ -401,20 +408,26 @@ private:
 };
 
 // Global instance
-InputProcessor inputProcessor;
+extern InputProcessor inputProcessor;
 
-void InitInputProcessor(float samplerate) {
-    inputProcessor.Init(samplerate);
-}
+void InitInputProcessor(float samplerate);
+void UpdateInputProcessorMode();
 
-void UpdateInputProcessorMode() {
-    inputProcessor.SetMode(toggleValues[1]);
-}
-
-// Process left channel only (guitar) - right channel (mic) stays clean
+// Process input chain:
+// - Toggle 0 (Clean): No processing (unless EQ enabled on L)
+// - Toggle 1 (Gate): Noise gate on both channels
+// - Toggle 2 (Comp): Compressor on L channel only
+// EQ always applies to L channel only when enabled
 inline void ProcessInputChain(float& inL, float& inR) {
-    inL = inputProcessor.Process(inL);
-    // inR stays unchanged - mic input remains clean
+    if (!inputProcessingEnabled) return;
+    // Skip if toggle=Clean (0) and EQ disabled - nothing to do
+    if (toggleValues[1] == 0 && eqEnabled == 0) return;
+
+    // Noise gate on both channels (toggle == 1)
+    inputProcessor.ProcessNoiseGateStereo(inL, inR);
+
+    // EQ and compressor on left channel only
+    inL = inputProcessor.ProcessLeft(inL);
 }
 
 #endif /* INPUT_PROCESSING_H */

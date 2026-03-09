@@ -8,6 +8,7 @@
 #define NAM_H
 #include <string.h>
 #include "../hoopi.h"
+#include "../nam_models.h"
 #include "daisysp.h"
 #include "nam_module.h"
 #include "galaxy_lite.h"
@@ -31,9 +32,13 @@ static float DSY_SDRAM_BSS namReverbFdn2[GalaxyLite::MAX_FDN_DELAY];
 static float DSY_SDRAM_BSS namReverbFdn3[GalaxyLite::MAX_FDN_DELAY];
 static float DSY_SDRAM_BSS namReverbDiffuser[GalaxyLite::DIFFUSION_STEPS][GalaxyLite::CHANNELS][GalaxyLite::MAX_DIFFUSER_DELAY];
 
+// Buffers for block processing
+static float namInputBuf[NAM_BLOCK];
+static float namOutputBuf[NAM_BLOCK];
+
 // This runs at a fixed rate, to prepare audio samples
-// Left channel: NAM (neural amp model)
-// Right channel: GalaxyLite reverb
+// Left channel: NAM (neural amp model) - block processing
+// Right channel: GalaxyLite reverb - sample by sample
 static void ProcessNam(AudioHandle::InputBuffer  in,
                        AudioHandle::OutputBuffer out,
                        size_t                    size)
@@ -41,7 +46,10 @@ static void ProcessNam(AudioHandle::InputBuffer  in,
     // Update NAM parameters (knobs 1-3)
     namModule->SetParameterAsFloat(0, namGain.Process());
     namModule->SetParameterAsFloat(1, namLevel.Process());
-    namModule->SetParameterAsBinnedValue(2, static_cast<int>(namModel.Process() * 9.99f) + 1);
+    // Scale knob to current model count (1-8 models)
+    int modelCount = GetModelCount();
+    int modelIndex = static_cast<int>(namModel.Process() * (modelCount - 0.01f)) + 1;
+    namModule->SetParameterAsBinnedValue(2, modelIndex);
 
     // Update reverb parameters (knobs 4-6)
     float reverbSize = namReverbSize.Process();
@@ -57,15 +65,25 @@ static void ProcessNam(AudioHandle::InputBuffer  in,
     galaxyLiteReverb.SetPreDelay(galaxyLitePreDelay / 255.0f);
     galaxyLiteReverb.SetMix(galaxyLiteMix / 255.0f);
 
-    for (size_t i = 0; i < size; i++)
-    {
+    // Collect input samples for block processing
+    for (size_t i = 0; i < size; i++) {
         float inputL = in[0][i];
         float inputR = in[1][i];
-        ProcessInputChain(inputL, inputR);  // Process L channel (guitar)
+        ProcessInputChain(inputL, inputR);
+        namInputBuf[i] = inputL;
+    }
 
-        // Left channel: NAM processing (mono in from left)
-        namModule->ProcessMono(inputL);
-        float namOut = namModule->GetAudioLeft();
+    // Process NAM as a block (256 samples at once)
+    namModule->ProcessBlock(namInputBuf, namOutputBuf, size);
+
+    // Apply reverb and mix outputs
+    for (size_t i = 0; i < size; i++)
+    {
+        float inputR = in[1][i];
+        ProcessInputChain(inputR, inputR);  // Process right channel for reverb
+
+        // Left channel: NAM output
+        float namOut = namOutputBuf[i];
 
         // Right channel: Reverb processing (mono in from right, with input gain)
         float reverbOut = galaxyLiteReverb.Process(inputR * inputGain);

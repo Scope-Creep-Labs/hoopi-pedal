@@ -40,7 +40,7 @@ static void ProcessCloudSeed(AudioHandle::InputBuffer in,
     {
         float inputL = in[0][i];
         float inputR = in[1][i];
-        ProcessInputChain(inputL, inputR);
+        ProcessInputChain(inputL, inputR);  // Process L channel (guitar)
 
         cloudSeedModule->ProcessStereo(inputL, inputR);
         float outputL = cloudSeedModule->GetAudioLeft();
