@@ -1,12 +1,14 @@
 /**
- * Based on bkshepherd/DaisySeedProjects
- * https://github.com/bkshepherd/DaisySeedProjects/blob/main/Software/GuitarPedal/Effect-Modules
+ * Hoopi Pedal - Dual-channel guitar and vocal effects processor
+ * Copyright (c) 2025-2026 Scope Creep Labs LLC
+ * SPDX-License-Identifier: MIT
  */
 
 #ifndef NAM_MODULE_H
 #define NAM_MODULE_H
 
 #include "base_effect_module.h"
+#include "nam_wavenet.h"
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -24,6 +26,10 @@ class NamModule : public BaseEffectModule {
     void ParameterChanged(int parameter_id) override;
     void SelectModel();
 
+    // Block processing for NAM (256 samples at a time)
+    void ProcessBlock(const float* in, float* out, size_t size);
+
+    // Legacy single-sample interface (not recommended for NAM)
     void ProcessMono(float in) override;
     void ProcessStereo(float inL, float inR) override;
     float GetBrightnessForLED(int led_id) const override;
@@ -35,9 +41,6 @@ class NamModule : public BaseEffectModule {
     float m_levelMin;
     float m_levelMax;
 
-    float wetMix;
-    float dryMix;
-
     int m_currentModelindex = -1;
 
     float m_cachedEffectMagnitudeValue;
@@ -48,5 +51,3 @@ class NamModule : public BaseEffectModule {
 } // namespace bkshepherd
 #endif
 #endif
-
-
