@@ -1,3 +1,9 @@
+/**
+ * Hoopi Pedal - Dual-channel guitar and vocal effects processor
+ * Copyright (c) 2025-2026 Scope Creep Labs LLC
+ * SPDX-License-Identifier: MIT
+ */
+
 struct modelDataNam {
     std::vector<float> weights;
     float levelAdjust = 1.0f;

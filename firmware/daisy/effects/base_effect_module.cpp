@@ -1,10 +1,12 @@
 /**
- * Based on bkshepherd/DaisySeedProjects
- * https://github.com/bkshepherd/DaisySeedProjects/blob/main/Software/GuitarPedal/Effect-Modules
+ * Hoopi Pedal - Dual-channel guitar and vocal effects processor
+ * Copyright (c) 2025-2026 Scope Creep Labs LLC
+ * SPDX-License-Identifier: MIT
  */
 
 #include "base_effect_module.h"
 #include "../Util/audio_utilities.h"
+#include "../controls.h"
 
 // This can be used to show the CPU on the default UI
 constexpr bool showCPU = false;
@@ -370,7 +372,13 @@ void BaseEffectModule::SetParameterAsBinnedValue(int parameter_id, int value) {
         return;
     }
 
-    SetParameterRaw(parameter_id, value - 1);
+    // Blink LED if value actually changed (non-blocking, safe from audio callback)
+    uint32_t newRaw = value - 1;
+    if (parameter_id >= 0 && parameter_id < m_paramCount && m_params[parameter_id] != newRaw) {
+        requestLedBlink();
+    }
+
+    SetParameterRaw(parameter_id, newRaw);
 }
 
 void BaseEffectModule::ProcessMono(float in) {

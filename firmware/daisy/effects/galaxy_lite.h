@@ -1,5 +1,5 @@
 /**
- * Hoopi Pedal - Effects module
+ * Hoopi Pedal - Dual-channel guitar and vocal effects processor
  * Copyright (c) 2025-2026 Scope Creep Labs LLC
  * SPDX-License-Identifier: MIT
  */

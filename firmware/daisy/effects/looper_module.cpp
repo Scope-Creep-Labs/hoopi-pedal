@@ -1,6 +1,7 @@
 /**
- * Based on bkshepherd/DaisySeedProjects
- * https://github.com/bkshepherd/DaisySeedProjects/blob/main/Software/GuitarPedal/Effect-Modules
+ * Hoopi Pedal - Dual-channel guitar and vocal effects processor
+ * Copyright (c) 2025-2026 Scope Creep Labs LLC
+ * SPDX-License-Identifier: MIT
  */
 
 #include "looper_module.h"
@@ -269,4 +270,19 @@ void LooperModule::DrawUI(OneBitGraphicsDisplay &display, int currentIndex, int 
         sprintf(strbuff, "Empty");
         display.WriteStringAligned(strbuff, Font_11x18, boundsToDrawIn, Alignment::bottomCentered, true);
     }
+}
+
+// Global looper instance and helper functions
+LooperModule *looperModule = nullptr;
+
+void InitLooper(float samplerate) {
+    looperModule = new LooperModule();
+    looperModule->Init(samplerate);
+}
+
+void UpdateLooperSwitches() {
+    // Looper uses alternate footswitch for record trigger
+    // Footswitch press: Toggle record on/off
+    // Footswitch hold (1 second): Clear loop buffer
+    // No toggle switch handling needed here
 }

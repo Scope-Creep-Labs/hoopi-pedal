@@ -1,6 +1,7 @@
 /**
- * Based on bkshepherd/DaisySeedProjects
- * https://github.com/bkshepherd/DaisySeedProjects/blob/main/Software/GuitarPedal/Effect-Modules
+ * Hoopi Pedal - Dual-channel guitar and vocal effects processor
+ * Copyright (c) 2025-2026 Scope Creep Labs LLC
+ * SPDX-License-Identifier: MIT
  */
 
 #include "amp_module.h"
