@@ -1,5 +1,9 @@
-# Project Name
-TARGET = hoopi_seed
+# Firmware version (pass via command line: make FW_VERSION_MAJOR=1 FW_VERSION_MINOR=0)
+FW_VERSION_MAJOR ?= 1
+FW_VERSION_MINOR ?= 9
+
+# Project Name (includes version)
+TARGET = hoopi_seed_v$(FW_VERSION_MAJOR)_$(FW_VERSION_MINOR)
 CPP_STANDARD = -std=gnu++20
 
 APP_TYPE = BOOT_SRAM
@@ -19,8 +23,9 @@ USE_DAISYSP_LGPL=1
 # USE_FATFS = 1
 
 # Sources and Hothouse header files
-CPP_SOURCES = hoopi.cpp hoopi_pedal.cpp effects/ImpulseResponse/ImpulseResponse.cpp effects/ImpulseResponse/dsp.cpp 
-CPP_SOURCES += effects/base_effect_module.cpp
+CPP_SOURCES = hoopi.cpp hoopi_pedal.cpp effects/ImpulseResponse/ImpulseResponse.cpp effects/ImpulseResponse/dsp.cpp
+CPP_SOURCES += audio_config.cpp uart_protocol.cpp controls.cpp ota.cpp uart_commands.cpp nam_models.cpp
+CPP_SOURCES += effects/base_effect_module.cpp effects/input_processing.cpp
 CPP_SOURCES += effects/amp_module.cpp
 CPP_SOURCES += effects/chorus_module.cpp
 CPP_SOURCES += effects/cloudseed_module.cpp
@@ -30,6 +35,7 @@ CPP_SOURCES += dependencies/CloudSeed/AudioLib/ValueTables.cpp
 CPP_SOURCES += dependencies/CloudSeed/FastSin.cpp
 CPP_SOURCES += dependencies/CloudSeed/Utils/Sha256.cpp
 CPP_SOURCES += effects/nam_module.cpp
+CPP_SOURCES += effects/nam_wavenet.cpp
 CPP_SOURCES += effects/distortion_module.cpp
 CPP_SOURCES += effects/looper_module.cpp
 CPP_SOURCES += effects/galaxy_reverb_module.cpp
@@ -52,5 +58,16 @@ include $(SYSTEM_FILES_DIR)/Makefile
 # include ../Makefile
 
 CPPFLAGS += -DRTNEURAL_DEFAULT_ALIGNMENT=8 -DRTNEURAL_NO_DEBUG=1 -DRTNEURAL_USE_EIGEN=1
+CPPFLAGS += -DFW_VERSION_MAJOR=$(FW_VERSION_MAJOR) -DFW_VERSION_MINOR=$(FW_VERSION_MINOR)
 # LDFLAGS += -u _printf_float
+
+# Show memory stats (re-links to get accurate linker memory usage)
+stats:
+	@if [ -f build/$(TARGET).elf ]; then \
+		$(CXX) $(OBJECTS) $(LDFLAGS) -o build/$(TARGET).elf 2>&1 | grep -E "Memory region|^\s+\w+:"; \
+	else \
+		echo "No build found. Run 'make' first."; \
+	fi
+
+.PHONY: stats
 

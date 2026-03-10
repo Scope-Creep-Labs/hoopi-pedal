@@ -1,5 +1,5 @@
 /**
- * Hoopi Pedal - Pin definitions
+ * Hoopi Pedal - Dual-channel guitar and vocal effects processor
  * Copyright (c) 2025-2026 Scope Creep Labs LLC
  * SPDX-License-Identifier: MIT
  */
@@ -18,11 +18,13 @@ const daisy::Pin SAI2_I2S_DOUT = seed::D26;
 const daisy::Pin SAI2_I2S_FS = seed::D27;
 const daisy::Pin SAI2_I2S_SCK = seed::D28;
 
-const daisy::Pin I2C_SCL = seed::D11;
-const daisy::Pin I2C_SDA = seed::D12;
+// I2C pins (directly accessed via Pin objects where needed)
+// const daisy::Pin I2C_SCL = seed::D11;
+// const daisy::Pin I2C_SDA = seed::D12;
 
-const daisy::Pin UART_RX = seed::D11;
-const daisy::Pin UART_TX = seed::D12;
+// UART to ESP32 - D11/D12 frees D29/D30 for USB-C (DFU recovery)
+const daisy::Pin UART_RX = seed::D11;  // UART4_RX
+const daisy::Pin UART_TX = seed::D12;  // UART4_TX
 
 const daisy::Pin PEDAL_FSW1 = seed::D13;
 const daisy::Pin PEDAL_FSW2 = seed::D14;
@@ -44,4 +46,3 @@ const daisy::Pin PEDAL_POT4 = seed::A4;
 const daisy::Pin PEDAL_POT5 = seed::A5;
 const daisy::Pin PEDAL_POT6 = seed::A6;
 #endif /* BBD01BDE_21C9_493A_A478_9A9CD6E958F2 */
-
